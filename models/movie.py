@@ -12,15 +12,16 @@ class Movie:
     A Movie instance always has a non-empty title and normalized lists for "genres" and "cast" 
     """
     def __init__(self, id, title, year, genres, description, cast, director, rating):
-        self.id = id
-        self.title = title
-        self.year = year
-        self.genres = genres
-        self.description = description
-        self.cast = cast
-        self.director = director
-        self.rating = rating
+        self.id = Movie.normalize_id(id)
+        self.title = Movie.normalize_title(title)
+        self.year = Movie.normalize_year(year)
+        self.genres = Movie.normalize_genres(genres)
+        self.description = Movie.normalize_description(description)
+        self.cast = Movie.normalize_cast(cast)
+        self.director = Movie.normalize_director(director)
+        self.rating = Movie.normalize_rating(rating)
 
+    @staticmethod
     def normalize_id(id) :
         if not id:
             raise Exception("InvalidMovieError")
@@ -35,6 +36,7 @@ class Movie:
             id = int(id)
         return id
 
+    @staticmethod
     def normalize_title(title):
         if not title:
             raise Exception("InvalidMovieError")
@@ -43,6 +45,7 @@ class Movie:
         title = title.lower()
         return title
     
+    @staticmethod
     def normalize_year(year):
         if not year:
             year = None
@@ -58,6 +61,7 @@ class Movie:
         else:
             raise Exception("InvalidDocumentError - year out of bounds")
     
+    @staticmethod
     def normalize_genres(genres):
         if genres is None:
             return []
@@ -79,6 +83,7 @@ class Movie:
         safe_list = list(dict.fromkeys(safe_list))
         return safe_list
     
+    @staticmethod
     def normalize_description(description):
         if not description:
             description = ""
@@ -87,6 +92,7 @@ class Movie:
         description = " ".join(description.split())
         return description
     
+    @staticmethod
     def normalize_cast(cast):
         if cast is None:
             return []
@@ -108,6 +114,7 @@ class Movie:
         safe_list = list(dict.fromkeys(safe_list))
         return safe_list
     
+    @staticmethod
     def normalize_director(director):
         if not director:
             director = ""
@@ -115,6 +122,7 @@ class Movie:
         director = director.strip()
         return director
     
+    @staticmethod
     def normalize_rating(rating):
         if rating is None or rating == "":
             return None
