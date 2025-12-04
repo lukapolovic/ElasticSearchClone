@@ -23,18 +23,18 @@ class Movie:
 
     def normalize_id(id) :
         if not id:
-            raise Exception("InvalidDocumentError")
+            raise Exception("InvalidMovieError")
         
         if isinstance(id, str):
             for char in id:
                 if not char.isdigit():
-                    raise Exception("InvalidDocumentError - found character in numbers")
+                    raise Exception("InvalidMovieError")
             id = int(id)
         return id
 
     def normalize_title(title):
         if not title:
-            raise Exception("InvalidDocumentError")
+            raise Exception("InvalidMovieError")
         
         title = " ".join(title.split())
         title = title.lower()
@@ -68,10 +68,11 @@ class Movie:
             for genre in genres:
                 if not isinstance(genre, str):
                     raise Exception("InvalidDocumentError - found number in strings")
-                genre.strip().lower()
+            genre = genre.strip().lower()
         
-        genre = list(dict.fromkeys(genres))
-        return genre
+        safe_list = genres[:]
+        safe_list = list(dict.fromkeys(safe_list))
+        return safe_list
     
     def normalize_description(description):
         if not description:
@@ -94,10 +95,11 @@ class Movie:
             for item in cast:
                 if not isinstance(cast, str):
                     raise Exception("InvalidDocumentError - found number in strings")
-                cast.strip().lower()
+            cast = cast.strip().lower()
         
-        cast = list(dict.fromkeys(cast))
-        return cast
+        safe_list = cast[:]
+        safe_list = list(dict.fromkeys(safe_list))
+        return safe_list
     
     def normalize_director(director):
         if not director:
