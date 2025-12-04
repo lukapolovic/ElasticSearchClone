@@ -25,6 +25,9 @@ class Movie:
         if not id:
             raise Exception("InvalidMovieError")
         
+        if id == 0 or id < 0:
+            raise Exception("InvalidMovieError")
+
         if isinstance(id, str):
             for char in id:
                 if not char.isdigit():
@@ -48,27 +51,29 @@ class Movie:
             for char in year:
                 if not char.isdigit():
                     raise Exception("InvalidDocumentError - found character in numbers")
-            
-            if MIN_YEAR <= year <= MAX_YEAR:
-                year = int(year)
-            else:
-                raise Exception("InvalidDocumentError - year out of bounds")
-        return year
+            year = int(year)
+
+        if MIN_YEAR <= year <= MAX_YEAR:
+            return year
+        else:
+            raise Exception("InvalidDocumentError - year out of bounds")
     
     def normalize_genres(genres):
-        if (not genres is None) | (not isinstance(genres, str) | (not isinstance(genres, list))):
+        if genres is None:
+            return []
+
+        if genres is not None and not isinstance(genres, (str, list)):
             raise Exception("InvalidDocumentError - genres is not None, string or list")
         
         if isinstance(genres, str):
             genres = genres.split(",")
-            for genre in genres:
-                genre.strip()
+            genres = [g.strip().lower() for g in genres]
 
         if isinstance(genres, list):
             for genre in genres:
                 if not isinstance(genre, str):
                     raise Exception("InvalidDocumentError - found number in strings")
-            genre = genre.strip().lower()
+            genres = [g.strip().lower() for g in genres]
         
         safe_list = genres[:]
         safe_list = list(dict.fromkeys(safe_list))
@@ -83,19 +88,21 @@ class Movie:
         return description
     
     def normalize_cast(cast):
-        if (not cast is None) | (not isinstance(cast, str) | (not isinstance(cast, list))):
+        if cast is None:
+            return []
+
+        if cast is not None and not isinstance(cast, (str, list)):
             raise Exception("InvalidDocumentError - cast is not None, string or list")
         
         if isinstance(cast, str):
             cast = cast.split(",")
-            for item in cast:
-                item.strip()
+            cast = [c.strip().lower() for c in cast]
 
         if isinstance(cast, list):
             for item in cast:
-                if not isinstance(cast, str):
+                if not isinstance(item, str):
                     raise Exception("InvalidDocumentError - found number in strings")
-            cast = cast.strip().lower()
+            cast = [c.strip().lower() for c in cast]
         
         safe_list = cast[:]
         safe_list = list(dict.fromkeys(safe_list))
@@ -109,10 +116,10 @@ class Movie:
         return director
     
     def normalize_rating(rating):
-        if not rating:
-            rating = None
+        if rating is None or rating == "":
+            return None
 
-        if (not isinstance(rating, float) | (not isinstance(rating, int) | (not isinstance(rating, str)))):
+        if rating is not None and not isinstance(rating, (int, float, str)):
             raise Exception("InvalidDocumentError - rating is not float, int or string")
         
         rating = float(rating)
