@@ -1,0 +1,10 @@
+{
+    "id": "int",
+    "title": "string",
+    "year": "int",
+    "genres": ["string"],
+    "description": "string",
+    "cast": ["string"],
+    "director": "string",
+    "rating": "float"
+}
