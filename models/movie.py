@@ -121,3 +121,26 @@ class Movie:
             return rating
         else:
             raise Exception("InvalidDocumentError - rating out of bounds")
+        
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "year": self.year,
+            "genres": self.genres[:],
+            "description": self.description,
+            "cast": self.cast[:],
+            "director": self.director,
+            "rating": self.rating
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        return cls(id=data.get("id", None),
+                   title=data.get("title", None),
+                   year=data.get("year", None),
+                   genres=data.get("genres", None),
+                   description=data.get("description", None),
+                   cast=data.get("cast", None),
+                   director=data.get("director", None),
+                   rating=data.get("rating", None))
