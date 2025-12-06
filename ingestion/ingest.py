@@ -7,6 +7,7 @@ import os
 
 def ingest_one(raw: dict) -> Optional[dict]:
     if not isinstance(raw, dict):
+        logging.warning("Skipping non-dict input: %r", raw)
         return None
     
     try:
@@ -99,7 +100,7 @@ def save_jsonl(docs: Iterable[dict], path: str, append: bool = False):
     with f:
         for doc in docs:
             if not isinstance(doc, dict):
-                logging.warning("SKipping non-dict object in output")
+                logging.warning("Skipping non-dict object in output")
                 continue
             line = json.dumps(doc, ensure_ascii=False)
             f.write(line + "\n")
