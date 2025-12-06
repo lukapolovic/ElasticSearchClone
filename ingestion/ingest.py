@@ -2,6 +2,8 @@ from models.movie import Movie
 import logging
 from typing import Optional, Iterable, List
 import json
+import tempfile
+import os
 
 def ingest_one(raw: dict) -> Optional[dict]:
     if not isinstance(raw, dict):
@@ -78,3 +80,32 @@ def load_json_file(path):
                     yield obj
                 else:
                     logging.warning(f"Line {lineno} is not an object, skipping")
+
+def save_jsonl(docs: Iterable[dict], path: str, append: bool = False):
+
+    tmp_path = None
+    use_atomic = False
+
+    if append:
+        f = open(path, "a", encoding="utf-8")
+    else:
+        dir_name = os.path.dirname(path)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=dir_name, prefix=".tmp_ingest_", text=True)
+        f = os.fdopen(tmp_fd, "w", encoding="utf-8")
+        use_atomic = True
+    
+    count = 0
+
+    with f:
+        for doc in docs:
+            if not isinstance(doc, dict):
+                logging.warning("SKipping non-dict object in output")
+                continue
+            line = json.dumps(doc, ensure_ascii=False)
+            f.write(line + "\n")
+            count += 1
+    
+        if use_atomic and tmp_path is not None:
+            os.replace(tmp_path, path)
+
+    logging.info("Saved %d documents to %s", count, path)
