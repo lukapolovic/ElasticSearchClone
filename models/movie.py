@@ -25,15 +25,16 @@ class Movie:
     def normalize_id(id) :
         if not id:
             raise Exception("InvalidMovieError")
-        
-        if id == 0 or id < 0:
-            raise Exception("InvalidMovieError")
-
+    
         if isinstance(id, str):
             for char in id:
                 if not char.isdigit():
                     raise Exception("InvalidMovieError")
             id = int(id)
+
+        if id == 0 or id < 0:
+            raise Exception("InvalidMovieError")
+
         return id
 
     @staticmethod
