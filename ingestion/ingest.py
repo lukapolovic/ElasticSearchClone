@@ -10,7 +10,7 @@ def ingest_one(raw: dict) -> Optional[dict]:
     try:
         movie = Movie.from_dict(raw)
     except Exception as e:
-        logging.warning("Skipping doc id=%s: %s", raw.get('id', e))
+        logging.warning("Skipping doc id=%s: %s", raw.get('id', "<missing>"), e)
         return None
     
     movie_doc = movie.to_dict()
