@@ -36,9 +36,9 @@ def ingest_many(raw_list: Iterable[dict], continue_on_error=True) -> List[dict]:
             ok_count += 1
             results.append(result)
 
-    logging.warning("OK=%s: %s", ok_count)
-    logging.warning("SKIP=%s: %s", skipped_count)
-    logging.warning("NOK=%s: %s", error_count)
+    logging.warning("OK=%s" % ok_count)
+    logging.warning("SKIP=%s" % skipped_count)
+    logging.warning("NOK=%s" % error_count)
 
     return results
 
