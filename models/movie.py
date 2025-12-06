@@ -1,7 +1,7 @@
 import datetime
 
 MIN_YEAR = 1888
-MAX_YEAR = datetime.now().year + 5
+MAX_YEAR = datetime.datetime.now().year + 5
 RATING_MIN = 0.0
 RATING_MAX = 10.0
 DEFAULT_GENRES = []
@@ -56,10 +56,11 @@ class Movie:
                     raise Exception("InvalidDocumentError - found character in numbers")
             year = int(year)
 
-        if MIN_YEAR <= year <= MAX_YEAR:
-            return year
-        else:
-            raise Exception("InvalidDocumentError - year out of bounds")
+        if year is not None:
+            if MIN_YEAR <= year <= MAX_YEAR:
+                return year
+            else:
+                raise Exception("InvalidDocumentError - year out of bounds")
     
     @staticmethod
     def normalize_genres(genres):
