@@ -1,16 +1,24 @@
-import string
+import unicodedata
+import regex
+import nltk
+from nltk.corpus import stopwords
+
+nltk.download('stopwords', quiet=True)
+STOP_WORDS = set(stopwords.words('english'))
 
 def tokenize(text):
     if not text:
         return []
     
-    lower_case_text = text.lower()
+    text = text.lower()
 
-    wo_punctuation = lower_case_text.translate(str.maketrans('', '', string.punctuation))
+    normalized = unicodedata.normalize("NFKD", text)
+    no_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
-    split_text = wo_punctuation.split()
+    no_punct = regex.sub(r"\p{P}+", " ", no_accents)
 
-    tokens = [t for t in split_text if t]
+    tokens = no_punct.split()
 
-    return tokens
+    filtered_tokens = [t for t in tokens if t not in STOP_WORDS]
 
+    return filtered_tokens
