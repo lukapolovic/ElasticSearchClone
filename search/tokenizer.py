@@ -2,23 +2,46 @@ import unicodedata
 import regex
 import nltk
 from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
 
 nltk.download('stopwords', quiet=True)
 STOP_WORDS = set(stopwords.words('english'))
 
-def tokenize(text):
+nltk.download("wordnet", quiet=True)
+nltk.download("omw-1.4", quiet=True)
+lemmatizer = WordNetLemmatizer()
+
+def normalize_unicode(text):
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+def clean_punctuation(text):
+    return regex.sub(r"\p{P}+", " ", text)
+
+def basic_token_filter(token):
+    if len(token) < 2:
+        return False
+    if token in STOP_WORDS:
+        return False
+    if regex.fullmatch(r"\d+", token):
+        return False
+    return True
+
+def tokenize(text, use_lemmatization=True):
     if not text:
         return []
     
     text = text.lower()
 
-    normalized = unicodedata.normalize("NFKD", text)
-    no_accents = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    text = normalize_unicode(text)
 
-    no_punct = regex.sub(r"\p{P}+", " ", no_accents)
+    text = clean_punctuation(text)
 
-    tokens = no_punct.split()
+    tokens = text.split()
 
-    filtered_tokens = [t for t in tokens if t not in STOP_WORDS]
+    tokens = [t for t in tokens if t not in STOP_WORDS]
 
-    return filtered_tokens
+    if use_lemmatization:
+        tokens = [lemmatizer.lemmatize(t) for t in tokens]
+
+    return tokens
