@@ -42,6 +42,7 @@ def tokenize(text, use_lemmatization=True):
     tokens = [t for t in tokens if t not in STOP_WORDS]
 
     if use_lemmatization:
-        tokens = [lemmatizer.lemmatize(t) for t in tokens]
+        tokens = [lemmatizer.lemmatize(t, pos='v') for t in tokens]
+        tokens = [lemmatizer.lemmatize(t, pos='n') for t in tokens]
 
     return tokens
