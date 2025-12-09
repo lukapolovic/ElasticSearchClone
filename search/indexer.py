@@ -27,4 +27,4 @@ class Indexer:
             self.add_document(doc_id, combined_text)
 
     def lookup(self, token):
-        return self.index.get(token, set())
+        return self.index.get(token, set()).copy()
