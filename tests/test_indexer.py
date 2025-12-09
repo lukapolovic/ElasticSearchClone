@@ -10,7 +10,7 @@ def fake_tokenize(text):
 
 def test_add_document_new_tokens(monkeypatch):
     # Patch tokenizer.tokenize
-    monkeypatch.setattr("search.indexer.tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("search.indexer.tokenize", fake_tokenize)
 
     indexer = Indexer()
     indexer.add_document(1, "Hello world")
@@ -22,7 +22,7 @@ def test_add_document_new_tokens(monkeypatch):
 
 
 def test_add_document_existing_token(monkeypatch):
-    monkeypatch.setattr("search.indexer.tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("search.indexer.tokenize", fake_tokenize)
 
     indexer = Indexer()
     indexer.add_document(1, "hello")
@@ -32,7 +32,7 @@ def test_add_document_existing_token(monkeypatch):
 
 
 def test_build_index(monkeypatch):
-    monkeypatch.setattr("search.indexer.tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("search.indexer.tokenize", fake_tokenize)
 
     documents = [
         {"id": 1, "title": "Distributed systems", "body": "are fun"},
@@ -54,7 +54,7 @@ def test_build_index(monkeypatch):
 
 
 def test_lookup_existing(monkeypatch):
-    monkeypatch.setattr("search.indexer.tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("search.indexer.tokenize", fake_tokenize)
 
     indexer = Indexer()
     indexer.add_document(1, "hello world")
@@ -68,7 +68,7 @@ def test_lookup_existing(monkeypatch):
 
 
 def test_lookup_missing(monkeypatch):
-    monkeypatch.setattr("search.indexer.tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("search.indexer.tokenize", fake_tokenize)
 
     indexer = Indexer()
     assert indexer.lookup("missing") == set()
