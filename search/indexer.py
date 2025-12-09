@@ -1,4 +1,4 @@
-import tokenizer
+from search.tokenizer import tokenize
 
 class Indexer:
     
@@ -6,7 +6,7 @@ class Indexer:
         self.index = {}
 
     def add_document(self, doc_id, text):
-        tokens = tokenizer.tokenize(text)
+        tokens = tokenize(text)
 
         for token in tokens:
             if token not in self.index:
