@@ -36,7 +36,7 @@ class QueryEngine:
                     weight = FIELD_WEIGHTS.get(field, 0.0)
                     scores[doc_id] += weight
             
-            ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-            return [doc_id for doc_id, _ in ranked_docs]
+        return [doc_id for doc_id, _ in ranked_docs]
             
