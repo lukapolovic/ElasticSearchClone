@@ -1,4 +1,5 @@
 from search.tokenizer import tokenize
+from nltk.corpus import wordnet
 
 FIELD_WEIGHTS = {
     "title": 5.0,
@@ -15,28 +16,59 @@ class QueryEngine:
     def __init__(self, indexer):
         self.indexer = indexer
 
+    def synonyms(self, tokens):
+        expanded_tokens = set()
+
+        for token in tokens:
+            # Always keep original token
+            expanded_tokens.add(token)
+
+            # Skip numeric tokens
+            if token.isdigit():
+                continue
+
+            synsets = wordnet.synsets(token)
+
+            added = 0
+            for synset in synsets:
+                # synset is guaranteed to be a Synset object
+                for lemma in synset.lemmas():
+                    raw = lemma.name().replace("_", " ").lower()
+
+                    normalized_tokens = tokenize(raw)
+
+                    for nt in normalized_tokens:
+                        expanded_tokens.add(nt)
+                        added += 1
+
+                    if added >= 5:
+                        break
+
+                if added >= 5:
+                    break
+
+        return expanded_tokens
+
     def search(self, query_string):
         if not query_string:
             return []
-        
+
         tokens = tokenize(query_string)
         if not tokens:
             return []
-        
+
+        expanded_tokens = self.synonyms(tokens)
+
         scores = {}
 
-        for token in tokens:
+        for token in expanded_tokens:
             matches = self.indexer.lookup(token)
 
             for doc_id, fields in matches.items():
-                if doc_id not in scores:
-                    scores[doc_id] = 0.0
+                scores.setdefault(doc_id, 0.0)
 
                 for field in fields:
-                    weight = FIELD_WEIGHTS.get(field, 0.0)
-                    scores[doc_id] += weight
-            
-        ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+                    scores[doc_id] += FIELD_WEIGHTS.get(field, 0.0)
 
+        ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return [doc_id for doc_id, _ in ranked_docs]
-            
