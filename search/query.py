@@ -20,10 +20,8 @@ class QueryEngine:
         expanded_tokens = set()
 
         for token in tokens:
-            # Always keep original token
             expanded_tokens.add(token)
-
-            # Skip numeric tokens
+            
             if token.isdigit():
                 continue
 
@@ -32,7 +30,7 @@ class QueryEngine:
             added = 0
             for synset in synsets:
                 # synset is guaranteed to be a Synset object
-                for lemma in synset.lemmas():
+                for lemma in synset.lemmas(): # type: ignore
                     raw = lemma.name().replace("_", " ").lower()
 
                     normalized_tokens = tokenize(raw)
@@ -60,15 +58,40 @@ class QueryEngine:
         expanded_tokens = self.synonyms(tokens)
 
         scores = {}
+        explanations = {}
 
         for token in expanded_tokens:
             matches = self.indexer.lookup(token)
 
             for doc_id, fields in matches.items():
                 scores.setdefault(doc_id, 0.0)
+                explanations.setdefault(doc_id, [])
 
                 for field in fields:
-                    scores[doc_id] += FIELD_WEIGHTS.get(field, 0.0)
+                    weight  = FIELD_WEIGHTS.get(field, 0.0)
+                    scores[doc_id] += weight
+
+                    explanations[doc_id].append({
+                        "token": token,
+                        "field": field,
+                        "weight": weight
+                    })
 
         ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        return [doc_id for doc_id, _ in ranked_docs]
+
+        results = []
+
+        for doc_id, score in ranked_docs:
+            doc = self.indexer.documents.get(doc_id, {})
+            results.append({
+                "doc_id": doc_id,
+                "title": doc.get("title", ""),
+                "director": doc.get("director", ""),
+                "cast": doc.get("cast", [])[:2],
+                "year": doc.get("year", ""),
+                "rating": doc.get("rating", ""),
+                "score": score,
+                "explanations": explanations[doc_id]
+            })
+        
+        return results

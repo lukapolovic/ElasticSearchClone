@@ -4,8 +4,9 @@ class Indexer:
     
     def __init__(self):
         self.index = {}
+        self.documents = {}
 
-    def add_document(self, doc_id, field_name, text):
+    def add_document(self, doc_id, field_name, text, full_doc=None):
         tokens = tokenize(text)
 
         for token in tokens:
@@ -16,6 +17,9 @@ class Indexer:
                 self.index[token][doc_id] = set()
             
             self.index[token][doc_id].add(field_name)
+
+        if full_doc:
+            self.documents[doc_id] = full_doc
 
     def build(self, documents, fields):
         for doc in documents:
@@ -29,7 +33,7 @@ class Indexer:
                 else:
                     field_text = str(field_text)
                     
-                self.add_document(doc_id, field, field_text)
+                self.add_document(doc_id, field, field_text, full_doc=doc)
 
     def lookup(self, token):
         postings = self.index.get(token, {})

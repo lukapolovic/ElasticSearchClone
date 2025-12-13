@@ -4,14 +4,22 @@ from search.query import QueryEngine
 class MockIndexer:
     def __init__(self):
         self.index = {}
+        self.documents = {}
 
-    def add(self, doc_id, field, text):
-        for token in tokenize(text):
+    def add(self, doc_id, field, text, full_doc=None):
+        tokens = tokenize(text)
+
+        for token in tokens:
             if token not in self.index:
                 self.index[token] = {}
+
             if doc_id not in self.index[token]:
-                self.index[token][doc_id] = []
-            self.index[token][doc_id].append(field)
+                self.index[token][doc_id] = set()
+
+            self.index[token][doc_id].add(field)
+
+        if full_doc:
+            self.documents[doc_id] = full_doc
 
     def lookup(self, token):
         if token not in self.index:
@@ -24,7 +32,7 @@ def build_mock_data():
     movies = {
         1: {
             "title": "The Matrix",
-            "cast": "Keanu Reeves Laurence Fishburne",
+            "cast": ["Keanu Reeves", "Laurence Fishburne"],
             "director": "Lana Wachowski Lilly Wachowski",
             "genres": "Sci-Fi Action",
             "description": "A hacker discovers reality is a simulation",
@@ -33,7 +41,7 @@ def build_mock_data():
         },
         2: {
             "title": "John Wick",
-            "cast": "Keanu Reeves Ian McShane",
+            "cast": ["Keanu Reeves", "Ian McShane"],
             "director": "Chad Stahelski",
             "genres": "Action Thriller",
             "description": "A retired assassin seeks revenge",
@@ -42,18 +50,86 @@ def build_mock_data():
         },
         3: {
             "title": "Interstellar",
-            "cast": "Matthew McConaughey Anne Hathaway",
+            "cast": ["Matthew McConaughey", "Anne Hathaway"],
             "director": "Christopher Nolan",
             "genres": "Sci-Fi Drama",
             "description": "Explorers travel through a wormhole",
             "year": "2014",
             "rating": "8.6"
+        },
+        4: {
+            "title": "Inception",
+            "cast": ["Leonardo DiCaprio", "Joseph Gordon-Levitt"],
+            "director": "Christopher Nolan",
+            "genres": "Sci-Fi Thriller",
+            "description": "A thief enters dreams to steal secrets",
+            "year": "2010",
+            "rating": "8.8"
+        },
+        5: {
+            "title": "The Dark Knight",
+            "cast": ["Christian Bale", "Heath Ledger"],
+            "director": "Christopher Nolan",
+            "genres": "Action Crime",
+            "description": "Batman faces the Joker in Gotham City",
+            "year": "2008",
+            "rating": "9.0"
+        },
+        6: {
+            "title": "Pulp Fiction",
+            "cast": ["John Travolta", "Samuel L. Jackson"],
+            "director": "Quentin Tarantino",
+            "genres": "Crime Drama",
+            "description": "The lives of criminals intertwine in LA",
+            "year": "1994",
+            "rating": "8.9"
+        },
+        7: {
+            "title": "Fight Club",
+            "cast": ["Brad Pitt", "Edward Norton"],
+            "director": "David Fincher",
+            "genres": "Drama",
+            "description": "An insomniac forms an underground fight club",
+            "year": "1999",
+            "rating": "8.8"
+        },
+        8: {
+            "title": "Forrest Gump",
+            "cast": ["Tom Hanks", "Robin Wright"],
+            "director": "Robert Zemeckis",
+            "genres": "Drama Romance",
+            "description": "A man with a low IQ recounts his life story",
+            "year": "1994",
+            "rating": "8.8"
+        },
+        9: {
+            "title": "The Lord of the Rings: The Fellowship of the Ring",
+            "cast": ["Elijah Wood", "Ian McKellen"],
+            "director": "Peter Jackson",
+            "genres": "Fantasy Adventure",
+            "description": "A hobbit begins a quest to destroy a powerful ring",
+            "year": "2001",
+            "rating": "8.8"
+        },
+        10: {
+            "title": "Gladiator",
+            "cast": ["Russell Crowe", "Joaquin Phoenix"],
+            "director": "Ridley Scott",
+            "genres": "Action Drama",
+            "description": "A betrayed Roman general seeks revenge",
+            "year": "2000",
+            "rating": "8.5"
         }
     }
 
+    # Add each field into the index and store full document
     for doc_id, fields in movies.items():
         for field_name, text in fields.items():
-            idx.add(doc_id, field_name, text)
+            if field_name == "cast":
+                text_for_index = " ".join(text)
+            else:
+                text_for_index = text
+            idx.add(doc_id, field_name, text_for_index, full_doc=fields)
 
     return idx, movies
 
@@ -80,6 +156,15 @@ if __name__ == "__main__":
         if not results:
             print("  No results\n")
         else:
-            for doc_id in results:
-                print(f"  {doc_id}: {movies[doc_id]['title']}")
+            for doc in results:
+                # Ensure cast is a list for printing
+                cast_list = doc.get("cast", [])
+                if isinstance(cast_list, str):
+                    cast_list = cast_list.split()
+                print(
+                    f"  Doc ID: {doc['doc_id']}, \nTitle: {doc['title']}, "
+                    f"\nDirector: {doc['director']}, \nCast: {', '.join(cast_list)}, "
+                    f"\nYear: {doc['year']}, \nRating: {doc['rating']}, \nScore: {doc['score']:.2f}"
+                    f"\nExplanation: {doc['explanations']}\n"
+                )
             print("")
