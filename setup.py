@@ -5,7 +5,9 @@ setup(
     version="0.1",
     packages=find_packages(),
     install_requires=[
-        "pytest"
+        "pytest",
+        "nltk",
+        "rapidfuzz",
     ],
     python_requires='>=3.11',
 )
