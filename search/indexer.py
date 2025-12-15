@@ -1,14 +1,15 @@
 from search.tokenizer import tokenize
+import math
 
 class Indexer:
     
     def __init__(self):
         self.index = {}
         self.documents = {}
+        self.total_documents = 0
+        self.doc_freq = {}
 
-    def add_document(self, doc_id, field_name, text, full_doc=None):
-        tokens = tokenize(text)
-
+    def add_tokens(self, doc_id, field_name, tokens, full_doc=None):
         for token in tokens:
             if token not in self.index:
                 self.index[token] = {}
@@ -27,6 +28,8 @@ class Indexer:
 
     def build(self, documents, fields):
         for doc in documents:
+            self.total_documents += 1
+            seen_tokens = set()
             doc_id = doc["id"]
 
             for field in fields:
@@ -36,8 +39,18 @@ class Indexer:
                     field_text = " ".join(field_text)
                 else:
                     field_text = str(field_text)
+
+                tokens = tokenize(field_text)
+                for token in tokens:
+                    if token not in seen_tokens:
+                        self.doc_freq[token] = self.doc_freq.get(token, 0) + 1
+                        seen_tokens.add(token)
                     
-                self.add_document(doc_id, field, field_text, full_doc=doc)
+                self.add_tokens(doc_id, field, tokens, full_doc=doc)
+
+    def idf(self, token):
+        df = self.doc_freq.get(token, 0)
+        return math.log(self.total_documents / (df + 1))
 
     def lookup(self, token):
         postings = self.index.get(token, {})

@@ -62,6 +62,7 @@ class QueryEngine:
 
         for token in expanded_tokens:
             matches = self.indexer.lookup(token)
+            idf = self.indexer.idf(token)
 
             for doc_id, posting in matches.items():
                 scores.setdefault(doc_id, 0.0)
@@ -72,7 +73,7 @@ class QueryEngine:
 
                 for field in fields:
                     weight  = FIELD_WEIGHTS.get(field, 0.0)
-                    contribution = weight * tf
+                    contribution = weight * tf * idf
 
                     scores[doc_id] += contribution
 
@@ -81,6 +82,7 @@ class QueryEngine:
                         "field": field,
                         "weight": weight,
                         "tf": tf,
+                        "idf": idf,
                         "contribution": contribution
                     })
 
