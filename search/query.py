@@ -63,18 +63,25 @@ class QueryEngine:
         for token in expanded_tokens:
             matches = self.indexer.lookup(token)
 
-            for doc_id, fields in matches.items():
+            for doc_id, posting in matches.items():
                 scores.setdefault(doc_id, 0.0)
                 explanations.setdefault(doc_id, [])
 
+                tf = posting["tf"]
+                fields = posting["fields"]
+
                 for field in fields:
                     weight  = FIELD_WEIGHTS.get(field, 0.0)
-                    scores[doc_id] += weight
+                    contribution = weight * tf
+
+                    scores[doc_id] += contribution
 
                     explanations[doc_id].append({
                         "token": token,
                         "field": field,
-                        "weight": weight
+                        "weight": weight,
+                        "tf": tf,
+                        "contribution": contribution
                     })
 
         ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)

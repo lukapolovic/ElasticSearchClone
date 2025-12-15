@@ -6,25 +6,34 @@ class MockIndexer:
         self.index = {}
         self.documents = {}
 
-    def add(self, doc_id, field, text, full_doc=None):
+    def add(self, doc_id, field_name, text, full_doc=None):
         tokens = tokenize(text)
 
         for token in tokens:
             if token not in self.index:
                 self.index[token] = {}
-
+            
             if doc_id not in self.index[token]:
-                self.index[token][doc_id] = set()
-
-            self.index[token][doc_id].add(field)
+                self.index[token][doc_id] = {
+                    "fields": set(),
+                    "tf": int(0)
+                }
+            
+            self.index[token][doc_id]["fields"].add(field_name)
+            self.index[token][doc_id]["tf"] += 1
 
         if full_doc:
             self.documents[doc_id] = full_doc
 
     def lookup(self, token):
-        if token not in self.index:
-            return {}
-        return {doc_id: fields.copy() for doc_id, fields in self.index[token].items()}
+        postings = self.index.get(token, {})
+        return {
+            doc_id: {
+                "fields": posting["fields"].copy(),
+                "tf": posting["tf"]
+                }
+                for doc_id, posting in postings.items()
+            }
 
 def build_mock_data():
     idx = MockIndexer()

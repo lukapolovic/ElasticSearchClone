@@ -14,9 +14,13 @@ class Indexer:
                 self.index[token] = {}
             
             if doc_id not in self.index[token]:
-                self.index[token][doc_id] = set()
+                self.index[token][doc_id] = {
+                    "fields": set(),
+                    "tf": int(0)
+                }
             
-            self.index[token][doc_id].add(field_name)
+            self.index[token][doc_id]["fields"].add(field_name)
+            self.index[token][doc_id]["tf"] += 1
 
         if full_doc:
             self.documents[doc_id] = full_doc
@@ -37,4 +41,10 @@ class Indexer:
 
     def lookup(self, token):
         postings = self.index.get(token, {})
-        return {doc_id: fields.copy() for doc_id, fields in postings.items()}
+        return {
+            doc_id: {
+                "fields": posting["fields"].copy(),
+                "tf": posting["tf"]
+                }
+                for doc_id, posting in postings.items()
+            }
