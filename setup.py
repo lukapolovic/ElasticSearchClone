@@ -8,6 +8,8 @@ setup(
         "pytest",
         "nltk",
         "rapidfuzz",
+        "uvicorn",
+        "fastapi",
     ],
     python_requires='>=3.11',
 )
