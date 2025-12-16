@@ -1,9 +1,8 @@
-from fastapi import APIRouter
-from app.models.search import SearchRequest
-from app.core.indexer import engine
+from fastapi import APIRouter, Request
 
 router = APIRouter()
 
-@router.post("/")
-def search(req: SearchRequest):
-    return engine.search(req.query)
+@router.get("/")
+def search(request: Request, q: str):
+    service = request.app.state.search_service
+    return service.search(q)

@@ -1,0 +1,102 @@
+[
+  {
+    "id": 1,
+    "title": "The Matrix",
+    "cast": ["Keanu Reeves", "Laurence Fishburne"],
+    "director": "Lana Wachowski Lilly Wachowski",
+    "genres": "Sci-Fi Action",
+    "description": "A hacker discovers reality is a simulation",
+    "year": "1999",
+    "rating": "8.7"
+  },
+  {
+    "id": 2,
+    "title": "John Wick",
+    "cast": ["Keanu Reeves", "Ian McShane"],
+    "director": "Chad Stahelski",
+    "genres": "Action Thriller",
+    "description": "A retired assassin seeks revenge",
+    "year": "2014",
+    "rating": "7.4"
+  },
+  {
+    "id": 3,
+    "title": "Interstellar",
+    "cast": ["Matthew McConaughey", "Anne Hathaway"],
+    "director": "Christopher Nolan",
+    "genres": "Sci-Fi Drama",
+    "description": "Explorers travel through a wormhole",
+    "year": "2014",
+    "rating": "8.6"
+  },
+  {
+    "id": 4,
+    "title": "Inception",
+    "cast": ["Leonardo DiCaprio", "Joseph Gordon-Levitt"],
+    "director": "Christopher Nolan",
+    "genres": "Sci-Fi Thriller",
+    "description": "A thief enters dreams to steal secrets",
+    "year": "2010",
+    "rating": "8.8"
+  },
+  {
+    "id": 5,
+    "title": "The Dark Knight",
+    "cast": ["Christian Bale", "Heath Ledger"],
+    "director": "Christopher Nolan",
+    "genres": "Action Crime",
+    "description": "Batman faces the Joker",
+    "year": "2008",
+    "rating": "9.0"
+  },
+  {
+    "id": 6,
+    "title": "Fight Club",
+    "cast": ["Brad Pitt", "Edward Norton"],
+    "director": "David Fincher",
+    "genres": "Drama",
+    "description": "An underground fight club forms",
+    "year": "1999",
+    "rating": "8.8"
+  },
+  {
+    "id": 7,
+    "title": "Pulp Fiction",
+    "cast": ["John Travolta", "Samuel L. Jackson"],
+    "director": "Quentin Tarantino",
+    "genres": "Crime Drama",
+    "description": "Interwoven crime stories",
+    "year": "1994",
+    "rating": "8.9"
+  },
+  {
+    "id": 8,
+    "title": "Forrest Gump",
+    "cast": ["Tom Hanks", "Robin Wright"],
+    "director": "Robert Zemeckis",
+    "genres": "Drama Romance",
+    "description": "Life story of Forrest Gump",
+    "year": "1994",
+    "rating": "8.8"
+  },
+  {
+    "id": 9,
+    "title": "Gladiator",
+    "cast": ["Russell Crowe", "Joaquin Phoenix"],
+    "director": "Ridley Scott",
+    "genres": "Action Drama",
+    "description": "A Roman general seeks revenge",
+    "year": "2000",
+    "rating": "8.5"
+  },
+  {
+    "id": 10,
+    "title": "The Lord of the Rings",
+    "cast": ["Elijah Wood", "Ian McKellen"],
+    "director": "Peter Jackson",
+    "genres": "Fantasy Adventure",
+    "description": "A quest to destroy a powerful ring",
+    "year": "2001",
+    "rating": "8.8"
+  }
+]

@@ -1,7 +1,20 @@
 from fastapi import FastAPI
-from app.api.routes import search, documents
+from contextlib import asynccontextmanager
+from app.core.search_service import SearchService
+from app.api.routes import search
 
-app = FastAPI(title="ElasticSearch Clone")
+search_service = SearchService()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    search_service.load_data()
+    yield
+
+app = FastAPI(
+    title="ElasticSearch Clone",
+    lifespan=lifespan
+)
 
 app.include_router(search.router, prefix="/search", tags=["search"])
-app.include_router(documents.router, prefix="/documents", tags=["documents"])
+
+app.state.search_service = search_service
