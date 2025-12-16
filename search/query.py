@@ -62,7 +62,7 @@ class QueryEngine:
 
         return [(match, score / 100.0) for match, score, _ in matches if score >= score_threshold]
 
-    def search(self, query_string):
+    def search(self, query_string, debug=False):
             if not query_string:
                 return []
 
@@ -126,5 +126,10 @@ class QueryEngine:
                     "score": score,
                     "explanations": explanations[doc_id]
                 })
+
+            if not debug:
+                for result in results:
+                    result.pop("explanations", None)
+                    result.pop("score", None)
             
             return results

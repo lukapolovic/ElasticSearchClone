@@ -33,3 +33,16 @@ class SearchService:
 
     def search(self, query: str):
         return self.engine.search(query)
+    
+    def search_debug(self, query: str):
+        return self.engine.search(
+            query, 
+            debug=True
+        )
+    
+    def health_check(self):
+        return {
+            "total_documents": self.indexer.total_documents,
+            "vocabulary_size": len(self.indexer.index),
+            "status": "ok"
+        }
