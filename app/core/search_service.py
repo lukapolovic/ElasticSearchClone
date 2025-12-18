@@ -31,14 +31,14 @@ class SearchService:
 
         print(f"Index built with {self.indexer.total_documents} documents.")
 
-    def search(self, query: str):
+    def search(self, query: str, page: int, page_size: int, debug: bool):
+        if debug:
+            return self.engine.search(
+                query,
+                debug=True
+            )
+
         return self.engine.search(query)
-    
-    def search_debug(self, query: str):
-        return self.engine.search(
-            query, 
-            debug=True
-        )
     
     def health_check(self):
         return {

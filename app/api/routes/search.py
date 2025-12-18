@@ -1,16 +1,20 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
+from app.models.search_query import SearchQuery
 
 router = APIRouter()
 
 @router.get("/")
-def search(request: Request, q: str):
+def search(
+    request: Request,
+    query: SearchQuery = Depends()
+    ):
     service = request.app.state.search_service
-    return service.search(q)
-
-@router.get("/debug")
-def search_debug(request: Request, q: str):
-    service = request.app.state.search_service
-    return service.search_debug(q)
+    return service.search(
+        query.q,
+        page=query.page,
+        page_size=query.page_size,
+        debug=query.debug
+    )
 
 @router.get("/health")
 def health(request: Request):
