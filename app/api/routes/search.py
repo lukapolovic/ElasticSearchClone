@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Request, Depends
 from app.models.search_query import SearchQuery
+from app.models.search_response import SearchResponse
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("/", response_model=SearchResponse)
 def search(
     request: Request,
     query: SearchQuery = Depends()

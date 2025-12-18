@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from search.indexer import Indexer
 from search.query import QueryEngine
+from app.models.search_response import SearchResponse, SearchResult
 
 class SearchService:
     def __init__(self):
@@ -32,13 +33,36 @@ class SearchService:
         print(f"Index built with {self.indexer.total_documents} documents.")
 
     def search(self, query: str, page: int, page_size: int, debug: bool):
-        if debug:
-            return self.engine.search(
-                query,
-                debug=True
+        raw_results = self.engine.search(query)
+
+        total_hits = len(raw_results)
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_results = raw_results[start:end]
+
+        results = []
+        for r in page_results:
+            results.append(
+                SearchResult(
+                    doc_id=r['doc_id'],
+                    title=r['title'],
+                    director=r['director'],
+                    cast=r['cast'],
+                    year=r['year'],
+                    rating=r['rating'],
+                    score=r.get('score') if debug else None,
+                    explanations=r.get('explanations') if debug else None
+                )
             )
 
-        return self.engine.search(query)
+        return SearchResponse(
+            query=query,
+            total_hits=total_hits,
+            page=page,
+            page_size=page_size,
+            results=results
+        )
     
     def health_check(self):
         return {

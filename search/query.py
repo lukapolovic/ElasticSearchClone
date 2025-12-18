@@ -126,10 +126,5 @@ class QueryEngine:
                     "score": score,
                     "explanations": explanations[doc_id]
                 })
-
-            if not debug:
-                for result in results:
-                    result.pop("explanations", None)
-                    result.pop("score", None)
             
             return results
