@@ -3,6 +3,7 @@ from pathlib import Path
 from search.indexer import Indexer
 from search.query import QueryEngine
 from app.models.search_response import SearchResponse, SearchResult
+from app.core.exceptions import IndexNotReadyError, InvalidQueryError
 
 class SearchService:
     def __init__(self):
@@ -33,6 +34,13 @@ class SearchService:
         print(f"Index built with {self.indexer.total_documents} documents.")
 
     def search(self, query: str, page: int, page_size: int, debug: bool):
+
+        if not self.indexer or self.indexer.total_documents == 0:
+            raise IndexNotReadyError()
+        
+        if not query.strip():
+            raise InvalidQueryError(details={"query": query})
+
         raw_results = self.engine.search(query)
 
         total_hits = len(raw_results)
