@@ -14,3 +14,7 @@ class IndexNotReadyError(SearchError):
 class InvalidQueryError(SearchError):
     code = "INVALID_QUERY"
     message = "The search query is invalid"
+
+class InvalidPageError(SearchError):
+    code = "INVALID_PAGE"
+    message = "The page number must be >= 1"

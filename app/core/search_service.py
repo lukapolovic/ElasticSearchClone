@@ -40,6 +40,9 @@ class SearchService:
         
         if not query.strip():
             raise InvalidQueryError(details={"query": query})
+        
+        if page < 1:
+            raise InvalidQueryError(details={"page": page})
 
         raw_results = self.engine.search(query)
 
