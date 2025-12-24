@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 from search.indexer import Indexer
 from search.query import QueryEngine
@@ -10,14 +11,32 @@ class SearchService:
         self.indexer = Indexer()
         self.engine = QueryEngine(self.indexer)
 
+    def _load_movies(self, data_path: Path):
+        if data_path.suffix == ".jsonl":
+            movies = []
+            with open(data_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    movies.append(json.loads(line))
+            return movies
+
+        with open(data_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
     def load_data(self):
         print("Loading data...")
-        data_path = Path(__file__).parent.parent / "data" / "movies.json"
+        repo_root = Path(__file__).resolve().parents[2]
+        jsonl_path = repo_root / "scripts" / "data" / "25kMovies.cleaned.jsonl"
+        json_path = repo_root / "app" / "data" / "movies.json"
+        data_path = jsonl_path if jsonl_path.exists() else json_path
 
-        with open(data_path, 'r', encoding='utf-8') as f:
-            movies = json.load(f)
+        load_start = time.perf_counter()
+        movies = self._load_movies(data_path)
+        load_end = time.perf_counter()
 
-        print(f"Loaded {len(movies)} movies.")
+        print(f"Loaded {len(movies)} movies from {data_path}.")
 
         fields = [
             "title",
@@ -29,9 +48,12 @@ class SearchService:
             "rating"
         ]
 
+        index_start = time.perf_counter()
         self.indexer.build(movies, fields)
+        index_end = time.perf_counter()
 
         print(f"Index built with {self.indexer.total_documents} documents.")
+        print(f"Load time: {load_end - load_start:.3f}s | Index time: {index_end - index_start:.3f}s")
 
     def search(self, query: str, page: int, page_size: int, debug: bool):
 

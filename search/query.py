@@ -120,7 +120,7 @@ class QueryEngine:
                     "doc_id": doc_id,
                     "title": doc.get("title", ""),
                     "director": doc.get("director", ""),
-                    "cast": doc.get("cast", [])[:2],
+                    "cast": doc.get("cast", []),
                     "year": doc.get("year", ""),
                     "rating": doc.get("rating", ""),
                     "score": score,

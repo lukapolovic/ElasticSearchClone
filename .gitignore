@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 elasticsearch_clone.egg-info
+/scripts/data/25kMovies.cleaned.jsonl
+/scripts/data/25kMovies.csv
+.DS_Store

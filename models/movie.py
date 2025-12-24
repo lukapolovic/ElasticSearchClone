@@ -1,4 +1,5 @@
 import datetime
+import math
 
 MIN_YEAR = 1888
 MAX_YEAR = datetime.datetime.now().year + 5
@@ -48,20 +49,29 @@ class Movie:
     
     @staticmethod
     def normalize_year(year):
-        if not year:
-            year = None
-        
+        if year is None or year == "":
+            raise Exception("InvalidDocumentError - missing year")
+
+        if isinstance(year, float):
+            if math.isnan(year):
+                raise Exception("InvalidDocumentError - missing year")
+            if year.is_integer():
+                year = int(year)
+            else:
+                raise Exception("InvalidDocumentError - year is not int")
+
         if isinstance(year, str):
-            for char in year:
-                if not char.isdigit():
-                    raise Exception("InvalidDocumentError - found character in numbers")
+            year = year.strip()
+            if not year or not year.isdigit():
+                raise Exception("InvalidDocumentError - found character in numbers")
             year = int(year)
 
-        if year is not None:
-            if MIN_YEAR <= year <= MAX_YEAR:
-                return year
-            else:
-                raise Exception("InvalidDocumentError - year out of bounds")
+        if not isinstance(year, int):
+            raise Exception("InvalidDocumentError - year is not int")
+
+        if MIN_YEAR <= year <= MAX_YEAR:
+            return year
+        raise Exception("InvalidDocumentError - year out of bounds")
     
     @staticmethod
     def normalize_genres(genres):
