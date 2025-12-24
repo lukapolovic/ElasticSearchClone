@@ -22,6 +22,8 @@ FUZZY_DESCRIPTION_PENALTY = 0.8
 # --- Synonym guardrails ---
 SYN_MAX_PER_BASE_TOKEN = 5
 SYN_SKIP_SHORT_TOKENS_LEN = 3 
+SYN_BOOST = 0.25
+MIN_HITS_FOR_BASE_QUERY = 5
 
 class QueryEngine:
     def __init__(self, indexer):
@@ -88,24 +90,22 @@ class QueryEngine:
         tokens = tokenize(query_string)
         if not tokens:
             return []
+
         base_tokens = set(tokens)
 
-        base_tokens, expanded_tokens = self.synonyms(base_tokens)
-
         scores = {}
-        if debug:
-            explanations = {}
+        explanations = {} if debug else None
 
+        # -------------------------
+        # PASS 1: base tokens only
+        # -------------------------
         fuzzy_budget = FUZZY_MAX_TOKENS_PER_QUERY
 
-        for token in expanded_tokens:
-            is_base = token in base_tokens
-
+        for token in base_tokens:
+            # exact match or fuzzy (base tokens only)
             if token in self.indexer.index:
-                    token_matches = [(token, 1.0)]
+                token_matches = [(token, 1.0)]
             else:
-                if not is_base:
-                    continue
                 if token.isdigit():
                     continue
                 if len(token) < FUZZY_MIN_TOKEN_LEN:
@@ -116,7 +116,13 @@ class QueryEngine:
                 candidates = self.indexer.fuzzy_candidates(token, max_candidates=300)
                 if not candidates:
                     continue
-                token_matches = self.get_closest_token(token, candidates)
+
+                token_matches = self.get_closest_token(
+                    token,
+                    candidates,
+                    limit=3,
+                    score_threshold=FUZZY_SCORE_THRESHOLD
+                )
                 fuzzy_budget -= 1
 
                 if not token_matches:
@@ -129,16 +135,15 @@ class QueryEngine:
                 for doc_id, posting in postings.items():
                     scores.setdefault(doc_id, 0.0)
                     if debug:
-                        explanations.setdefault(doc_id, []) # type: ignore
+                        explanations.setdefault(doc_id, [])  # type: ignore
 
                     tf_by_field = posting.get("tf_by_field", {})
-                    fields = posting["fields"]
-
-                    for field in fields:
-                        weight  = FIELD_WEIGHTS.get(field, 0.0)
+                    for field in posting["fields"]:
+                        weight = FIELD_WEIGHTS.get(field, 0.0)
                         field_tf = tf_by_field.get(field, 0)
                         if field_tf <= 0:
                             continue
+
                         contribution = weight * field_tf * idf
 
                         if similarity < 1.0:
@@ -147,23 +152,72 @@ class QueryEngine:
                             elif field != "title":
                                 contribution *= FUZZY_NON_TITLE_PENALTY
 
+                        # base token boost = 1.0
                         scores[doc_id] += contribution
 
                         if debug:
-                            explanations[doc_id].append({ # type: ignore
+                            explanations[doc_id].append({  # type: ignore
                                 "token": token,
                                 "field": field,
                                 "weight": weight,
-                                "tf_by_field": tf_by_field.get(field, 0),
+                                "tf_by_field": field_tf,
                                 "idf": idf,
                                 "similarity": similarity,
-                                "contribution": contribution
+                                "contribution": contribution,
+                                "source": "base",
                             })
+
+        # ---------------------------------------------------
+        # PASS 2 (fallback): synonyms only if base is weak
+        # ---------------------------------------------------
+        if len(scores) < MIN_HITS_FOR_BASE_QUERY:
+            _, expanded_tokens = self.synonyms(base_tokens)
+
+            synonym_only_tokens = expanded_tokens - base_tokens
+
+            for token in synonym_only_tokens:
+                if token in self.indexer.index:
+                    token_matches = [(token, 1.0)]
+                else:
+                    continue
+
+                for match_token, similarity in token_matches:
+                    postings = self.indexer.lookup(match_token)
+                    idf = self.indexer.idf(match_token) * similarity
+
+                    for doc_id, posting in postings.items():
+                        scores.setdefault(doc_id, 0.0)
+                        if debug:
+                            explanations.setdefault(doc_id, [])  # type: ignore
+
+                        tf_by_field = posting.get("tf_by_field", {})
+                        for field in posting["fields"]:
+                            weight = FIELD_WEIGHTS.get(field, 0.0)
+                            field_tf = tf_by_field.get(field, 0)
+                            if field_tf <= 0:
+                                continue
+
+                            contribution = weight * field_tf * idf
+
+                            contribution *= SYN_BOOST
+
+                            scores[doc_id] += contribution
+
+                            if debug:
+                                explanations[doc_id].append({  # type: ignore
+                                    "token": token,
+                                    "field": field,
+                                    "weight": weight,
+                                    "tf_by_field": field_tf,
+                                    "idf": idf,
+                                    "similarity": similarity,
+                                    "contribution": contribution,
+                                    "source": "synonym",
+                                })
 
         ranked_docs = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
 
         results = []
-
         for doc_id, score in ranked_docs:
             doc = self.indexer.documents.get(doc_id, {})
             item = {
@@ -176,7 +230,7 @@ class QueryEngine:
             }
             if debug:
                 item["score"] = score
-                item["explanations"] = explanations.get(doc_id, []) # type: ignore
+                item["explanations"] = explanations.get(doc_id, [])  # type: ignore
             results.append(item)
-            
+
         return results
