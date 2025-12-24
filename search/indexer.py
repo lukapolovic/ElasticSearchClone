@@ -1,4 +1,5 @@
 from search.tokenizer import tokenize
+from collections import defaultdict
 import math
 
 class Indexer:
@@ -8,7 +9,9 @@ class Indexer:
         self.documents = {}
         self.total_documents = 0
         self.doc_freq = {}
-        self.index_tokens = set()
+        self.index_tokens = []
+        self.ngram_index = defaultdict(set)
+        self.ngram_n = 3
 
     def add_tokens(self, doc_id, field_name, tokens, full_doc=None):
         for token in tokens:
@@ -51,11 +54,47 @@ class Indexer:
                     
                 self.add_tokens(doc_id, field, tokens, full_doc=doc)
 
-        self.index_tokens = set(self.index.keys())
+        self.index_tokens = list(self.index.keys())
+        self.ngram_index.clear()
+
+        n = self.ngram_n
+        for tok in self.index_tokens:
+            for ng in self._ngrams(tok, n):
+                self.ngram_index[ng].add(tok)
 
     def idf(self, token):
         df = self.doc_freq.get(token, 0)
         return math.log(self.total_documents / (df + 1))
+    
+    def _ngrams(self, s: str, n: int):
+        s = s.strip()
+        if not s:
+            return []
+        if len(s) < n:
+            if len(s) < 2:
+                return [s]
+            return [s[i:i+2] for i in range(len(s)-1)]
+        return [s[i:i+n] for i in range(len(s)-n+1)]
+
+    def fuzzy_candidates(self, token: str, max_candidates: int = 400) -> list[str]:
+        """
+        Return a reduced candidate list fro fuzzy matching using character n-grams.
+        """
+        n = self.ngram_n
+        grams = self._ngrams(token, n)
+
+        counts = {}
+        for g in grams:
+            for cand in self.ngram_index.get(g, ()):
+                counts[cand] = counts.get(cand, 0) + 1
+        
+        if not counts:
+            return []
+        
+        min_overlap = 2 if len(token) >= 6 else 1
+        ranked = [(tok, c) for tok, c in counts.items() if c >= min_overlap]
+        ranked.sort(key=lambda x: x[1], reverse=True)
+        return [tok for tok, _ in ranked[:max_candidates]]
 
     def lookup(self, token):
         postings = self.index.get(token, {})

@@ -19,40 +19,53 @@ FUZZY_SCORE_THRESHOLD = 80
 FUZZY_NON_TITLE_PENALTY = 0.6
 FUZZY_DESCRIPTION_PENALTY = 0.8
 
+# --- Synonym guardrails ---
+SYN_MAX_PER_BASE_TOKEN = 5
+SYN_SKIP_SHORT_TOKENS_LEN = 3 
+
 class QueryEngine:
     def __init__(self, indexer):
         self.indexer = indexer
 
-    def synonyms(self, tokens):
-        expanded_tokens = set()
+    def synonyms(self, base_tokens: set[str]) -> tuple[set[str], set[str]]:
+        """
+        Return (base_tokens, expanded_tokens).
+        expanded_tokens includes base tokens + limited WordNet expnasions (synonyms).
 
-        for token in tokens:
-            expanded_tokens.add(token)
-            
+        expansions are meant to help recall, but should not trigger fuzzy matching.
+        """
+        expanded_tokens: set[str] = set(base_tokens)
+
+        for token in base_tokens:
             if token.isdigit():
                 continue
 
-            synsets = wordnet.synsets(token)
+            if len(token) <= SYN_SKIP_SHORT_TOKENS_LEN:
+                continue
 
+            synsets = wordnet.synsets(token)
+            
             added = 0
             for synset in synsets:
-                # synset is guaranteed to be a Synset object
                 for lemma in synset.lemmas(): # type: ignore
                     raw = lemma.name().replace("_", " ").lower()
 
                     normalized_tokens = tokenize(raw)
-
                     for nt in normalized_tokens:
+                        if nt == token:
+                            continue
                         expanded_tokens.add(nt)
                         added += 1
-
-                    if added >= 5:
+                        if added >= SYN_MAX_PER_BASE_TOKEN:
+                            break
+                    
+                    if added >= SYN_MAX_PER_BASE_TOKEN:
                         break
-
-                if added >= 5:
+                
+                if added >= SYN_MAX_PER_BASE_TOKEN:
                     break
 
-        return expanded_tokens
+        return base_tokens, expanded_tokens
 
     def get_closest_token(self, token, index_tokens, limit=3, score_threshold=80):
         """
@@ -75,27 +88,35 @@ class QueryEngine:
         tokens = tokenize(query_string)
         if not tokens:
             return []
+        base_tokens = set(tokens)
 
-        expanded_tokens = self.synonyms(tokens)
+        base_tokens, expanded_tokens = self.synonyms(base_tokens)
 
         scores = {}
         if debug:
             explanations = {}
 
-        index_tokens = self.indexer.index_tokens
-
         fuzzy_budget = FUZZY_MAX_TOKENS_PER_QUERY
 
         for token in expanded_tokens:
+            is_base = token in base_tokens
+
             if token in self.indexer.index:
                     token_matches = [(token, 1.0)]
             else:
+                if not is_base:
+                    continue
+                if token.isdigit():
+                    continue
                 if len(token) < FUZZY_MIN_TOKEN_LEN:
                     continue
                 if fuzzy_budget <= 0:
                     continue
 
-                token_matches = self.get_closest_token(token, index_tokens)
+                candidates = self.indexer.fuzzy_candidates(token, max_candidates=300)
+                if not candidates:
+                    continue
+                token_matches = self.get_closest_token(token, candidates)
                 fuzzy_budget -= 1
 
                 if not token_matches:
