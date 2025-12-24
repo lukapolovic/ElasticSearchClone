@@ -12,6 +12,12 @@ FIELD_WEIGHTS = {
     "rating": 0.1
 }
 
+# --- Fuzzy guardrails (tune as needed) ---
+FUZZY_MIN_TOKEN_LEN = 4
+FUZZY_MAX_TOKENS_PER_QUERY = 3
+FUZZY_SCORE_THRESHOLD = 80
+FUZZY_NON_TITLE_PENALTY = 0.6
+FUZZY_DESCRIPTION_PENALTY = 0.8
 
 class QueryEngine:
     def __init__(self, indexer):
@@ -63,68 +69,93 @@ class QueryEngine:
         return [(match, score / 100.0) for match, score, _ in matches if score >= score_threshold]
 
     def search(self, query_string, debug=False):
-            if not query_string:
-                return []
+        if not query_string:
+            return []
 
-            tokens = tokenize(query_string)
-            if not tokens:
-                return []
+        tokens = tokenize(query_string)
+        if not tokens:
+            return []
 
-            expanded_tokens = self.synonyms(tokens)
+        expanded_tokens = self.synonyms(tokens)
 
-            scores = {}
+        scores = {}
+        if debug:
             explanations = {}
 
-            index_tokens = list(self.indexer.index.keys())
+        index_tokens = self.indexer.index_tokens
 
-            for token in expanded_tokens:
-                if token in self.indexer.index:
+        fuzzy_budget = FUZZY_MAX_TOKENS_PER_QUERY
+
+        for token in expanded_tokens:
+            if token in self.indexer.index:
                     token_matches = [(token, 1.0)]
-                else:
-                    token_matches = self.get_closest_token(token, index_tokens)
+            else:
+                if len(token) < FUZZY_MIN_TOKEN_LEN:
+                    continue
+                if fuzzy_budget <= 0:
+                    continue
 
-                for match_token, similarity in token_matches:
-                    postings = self.indexer.lookup(match_token)
-                    idf = self.indexer.idf(match_token) * similarity
+                token_matches = self.get_closest_token(token, index_tokens)
+                fuzzy_budget -= 1
 
-                    for doc_id, posting in postings.items():
-                        scores.setdefault(doc_id, 0.0)
-                        explanations.setdefault(doc_id, [])
+                if not token_matches:
+                    continue
 
-                        tf = posting["tf"]
-                        fields = posting["fields"]
+            for match_token, similarity in token_matches:
+                postings = self.indexer.lookup(match_token)
+                idf = self.indexer.idf(match_token) * similarity
 
-                        for field in fields:
-                            weight  = FIELD_WEIGHTS.get(field, 0.0)
-                            contribution = weight * tf * idf
+                for doc_id, posting in postings.items():
+                    scores.setdefault(doc_id, 0.0)
+                    if debug:
+                        explanations.setdefault(doc_id, []) # type: ignore
 
-                            scores[doc_id] += contribution
+                    tf_by_field = posting.get("tf_by_field", {})
+                    fields = posting["fields"]
 
-                            explanations[doc_id].append({
+                    for field in fields:
+                        weight  = FIELD_WEIGHTS.get(field, 0.0)
+                        field_tf = tf_by_field.get(field, 0)
+                        if field_tf <= 0:
+                            continue
+                        contribution = weight * field_tf * idf
+
+                        if similarity < 1.0:
+                            if field == "description":
+                                contribution *= FUZZY_DESCRIPTION_PENALTY
+                            elif field != "title":
+                                contribution *= FUZZY_NON_TITLE_PENALTY
+
+                        scores[doc_id] += contribution
+
+                        if debug:
+                            explanations[doc_id].append({ # type: ignore
                                 "token": token,
                                 "field": field,
                                 "weight": weight,
-                                "tf": tf,
+                                "tf_by_field": tf_by_field.get(field, 0),
                                 "idf": idf,
                                 "similarity": similarity,
                                 "contribution": contribution
                             })
 
-            ranked_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        ranked_docs = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
 
-            results = []
+        results = []
 
-            for doc_id, score in ranked_docs:
-                doc = self.indexer.documents.get(doc_id, {})
-                results.append({
-                    "doc_id": doc_id,
-                    "title": doc.get("title", ""),
-                    "director": doc.get("director", ""),
-                    "cast": doc.get("cast", []),
-                    "year": doc.get("year", ""),
-                    "rating": doc.get("rating", ""),
-                    "score": score,
-                    "explanations": explanations[doc_id]
-                })
+        for doc_id, score in ranked_docs:
+            doc = self.indexer.documents.get(doc_id, {})
+            item = {
+                "doc_id": doc_id,
+                "title": doc.get("title", ""),
+                "director": doc.get("director", ""),
+                "cast": doc.get("cast", []),
+                "year": doc.get("year", ""),
+                "rating": doc.get("rating", ""),
+            }
+            if debug:
+                item["score"] = score
+                item["explanations"] = explanations.get(doc_id, []) # type: ignore
+            results.append(item)
             
-            return results
+        return results

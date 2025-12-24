@@ -66,7 +66,7 @@ class SearchService:
         if page < 1:
             raise InvalidQueryError(details={"page": page})
 
-        raw_results = self.engine.search(query)
+        raw_results = self.engine.search(query, debug=debug)
 
         total_hits = len(raw_results)
 

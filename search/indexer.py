@@ -8,6 +8,7 @@ class Indexer:
         self.documents = {}
         self.total_documents = 0
         self.doc_freq = {}
+        self.index_tokens = set()
 
     def add_tokens(self, doc_id, field_name, tokens, full_doc=None):
         for token in tokens:
@@ -17,11 +18,13 @@ class Indexer:
             if doc_id not in self.index[token]:
                 self.index[token][doc_id] = {
                     "fields": set(),
-                    "tf": int(0)
+                    "tf": int(0),
+                    "tf_by_field": {}
                 }
             
             self.index[token][doc_id]["fields"].add(field_name)
             self.index[token][doc_id]["tf"] += 1
+            self.index[token][doc_id]["tf_by_field"][field_name] = self.index[token][doc_id]["tf_by_field"].get(field_name, 0) + 1  
 
         if full_doc:
             self.documents[doc_id] = full_doc
@@ -48,6 +51,8 @@ class Indexer:
                     
                 self.add_tokens(doc_id, field, tokens, full_doc=doc)
 
+        self.index_tokens = set(self.index.keys())
+
     def idf(self, token):
         df = self.doc_freq.get(token, 0)
         return math.log(self.total_documents / (df + 1))
@@ -57,7 +62,8 @@ class Indexer:
         return {
             doc_id: {
                 "fields": posting["fields"].copy(),
-                "tf": posting["tf"]
+                "tf": posting["tf"],
+                "tf_by_field": dict(posting.get("tf_by_field", {}))
                 }
                 for doc_id, posting in postings.items()
             }

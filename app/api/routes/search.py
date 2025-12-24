@@ -30,7 +30,7 @@ def search(
         meta=Meta(
             page=query.page,
             page_size=query.page_size,
-            total_hits=len(results.results),
+            total_hits=results.total_hits,
             took_ms=round(took_ms, 2)
         )
     )
