@@ -4,11 +4,8 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
-nltk.download('stopwords', quiet=True)
 STOP_WORDS = set(stopwords.words('english'))
 
-nltk.download("wordnet", quiet=True)
-nltk.download("omw-1.4", quiet=True)
 lemmatizer = WordNetLemmatizer()
 
 def normalize_unicode(text):
