@@ -13,7 +13,8 @@ search_service = SearchService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_nltk_data() 
-    search_service.load_data()
+    app.state.search_service = SearchService()
+    app.state.search_service.load_data()
     yield
 
 app = FastAPI(
