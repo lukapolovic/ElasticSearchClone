@@ -10,6 +10,7 @@ setup(
         "rapidfuzz",
         "uvicorn",
         "fastapi",
+        "httpx>=0.27.0",
     ],
     python_requires='>=3.11',
 )

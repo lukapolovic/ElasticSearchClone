@@ -7,9 +7,11 @@ from app.models.search_response import SearchResponse, SearchResult
 from app.core.exceptions import IndexNotReadyError, InvalidQueryError
 
 class SearchService:
-    def __init__(self):
+    def __init__(self, shard_id: int = 0, num_shards: int = 1):
         self.indexer = Indexer()
         self.engine = QueryEngine(self.indexer)
+        self.shard_id = shard_id
+        self.num_shards = num_shards
 
     def _load_movies(self, data_path: Path):
         if data_path.suffix == ".jsonl":
@@ -47,6 +49,11 @@ class SearchService:
             "director",
             "rating"
         ]
+
+        if self.num_shards > 1:
+            before = len(movies)
+            movies = [m for m in movies if (int(m["id"])) % self.num_shards == self.shard_id]
+            print(f"Shard {self.shard_id}/{self.num_shards}: kept {len(movies)} of {before} movies.")
 
         index_start = time.perf_counter()
         self.indexer.build(movies, fields)
