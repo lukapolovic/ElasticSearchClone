@@ -3,6 +3,7 @@ import asyncio
 from typing import Any, Dict, List, Tuple, cast
 from fastapi import FastAPI, Query
 from contextlib import asynccontextmanager
+from fastapi.responses import JSONResponse
 import httpx
 from time import perf_counter
 
@@ -118,4 +119,53 @@ async def search(
             took_ms=took_ms,
         ),
         error=None,
+    )
+
+@app.get("/health")
+def health() -> Dict[str, str]:
+    # Liveness check always returns healthy
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def ready() -> JSONResponse:
+    """
+    Readiness: coordinator is ready only if ALL shards are ready
+
+    We call each shard's /internal/ready endpoint to check readiness.
+    If any shard is not ready, we return 503 Service Unavailable.
+    """
+    shard_urls: List[str] = app.state.shard_urls
+
+    timeout = httpx.Timeout(1.0, connect=0.5)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        tasks = []
+        for base in shard_urls:
+            url = f"{base}/internal/ready"
+            tasks.append(client.get(url))
+
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    not_ready: List[str] = []
+    for base, r in zip(shard_urls, responses):
+        if isinstance(r, Exception):
+            not_ready.append(f"{base} error: {type(r).__name__}")
+            continue
+
+        resp = cast(httpx.Response, r)
+
+        if resp.status_code != 200:
+            not_ready.append(f"{base} status={resp.status_code}")
+
+    if not_ready:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready", 
+                "details": not_ready
+            }
+        )
+    
+    return JSONResponse(
+        status_code=200,
+        content={"status": "ready"}
     )

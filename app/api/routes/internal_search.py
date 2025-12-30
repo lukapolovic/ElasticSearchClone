@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Dict
 
@@ -33,5 +34,19 @@ def internal_search(request: Request, body: InternalSearchRequest) -> Dict[str, 
 
 @router.get("/health")
 def internal_health_check(request: Request) -> Dict[str, Any]:
-    saerch_service = request.app.state.search_service
-    return saerch_service.health_check()
+    search_service = request.app.state.search_service
+    return search_service.health_check()
+
+@router.get("/ready")
+def internal_readiness_check(request: Request):
+    #Readiness controlled by shard_main.py
+    is_ready = bool(getattr(request.app.state, "is_ready", False))
+
+    if not is_ready:
+        # Return 503 Service Unavailable if not ready
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "not_ready"}
+        )
+    
+    return {"detail": "ready"}

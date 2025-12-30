@@ -16,6 +16,9 @@ def _env_int(name: str, default: int) -> int:
     
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Readiness impleented for Kubernetes liveness/readiness probes
+    app.state.is_ready = False
+
     ensure_nltk_data()
     shard_id = _env_int("SHARD_ID", 0)
     num_shards = _env_int("NUM_SHARDS", 1)
@@ -24,6 +27,9 @@ async def lifespan(app: FastAPI):
     search_service.load_data()
 
     app.state.search_service = search_service
+
+    # Mark ready only after data is loaded and indexed
+    app.state.is_ready = True
     yield
 
 app = FastAPI(
