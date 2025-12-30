@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
 import httpx
 from time import perf_counter
+import uuid
 
 from app.models.api_response import APIResponse, Meta
 from app.models.search_response import SearchResult, SearchResponse
@@ -68,30 +69,66 @@ async def search(
 
     start_time = perf_counter()
 
+    request_id = uuid.uuid4().hex[:12]
+
     timeout = httpx.Timeout(READ_TIMEOUT_SEC, connect=CONNECT_TIMEOUT_SEC)
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = []
-        for base in shard_urls:
+        for i, base in enumerate(shard_urls):
             url = f"{base}/internal/search"
             payload = {"q": q, "page": 1, "page_size": k, "debug": debug}
-            tasks.append(_post_with_retry(client, url, payload))
+            
+            async def one_shard_call(shard_index: int, shard_base: str, shard_url: str):
+                t0 = perf_counter()
+                try:
+                    resp = await _post_with_retry(client, shard_url, payload)
+                    took_ms = round((perf_counter() - t0) * 1000, 2)
+                    return {
+                        "shard": shard_index,
+                        "base_url": shard_base,
+                        "ok": resp.status_code == 200,
+                        "status_code": resp.status_code,
+                        "took_ms": took_ms,
+                        "response": resp,
+                        "request_id": request_id,
+                    }
+                except Exception as e:
+                    took_ms = round((perf_counter() - t0) * 1000, 2)
+                    return {
+                        "shard": shard_index,
+                        "base_url": shard_base,
+                        "ok": False,
+                        "status_code": None,
+                        "took_ms": took_ms,
+                        "error": type(e).__name__,
+                    }
+                
+            tasks.append(one_shard_call(i, base, url))
 
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        shard_call_results = await asyncio.gather(*tasks)
 
     shard_results: List[Dict[str, Any]] = []
     errors: List[str] = []
+    shard_meta : List[Dict[str, Any]] = []
 
-    for i, r in enumerate(responses):
-        if isinstance(r, Exception):
-            errors.append(f"Shard[{i}] error: {type(r).__name__}")
+    for r in shard_call_results:
+        shard_meta_item = {
+            "shard": r["shard"],
+            "base_url": r["base_url"],
+            "ok": r["ok"],
+            "status_code": r["status_code"],
+            "took_ms": r["took_ms"],
+            "request_id": r["request_id"],
+        }
+        if not r["ok"]:
+            shard_meta_item["error"] = r.get("error") or f"status={r.get('status_code')}"
+            errors.append(f"Shard {r['shard']} {shard_meta_item['error']}")
+            shard_meta.append(shard_meta_item)
             continue
 
-        resp = cast(httpx.Response, r)
-
-        if resp.status_code != 200:
-            errors.append(f"Shard[{i}] status={resp.status_code}")
-            continue
+        resp = cast(httpx.Response, r["response"])
         shard_results.append(resp.json())
+        shard_meta.append(shard_meta_item)
 
     total_hits = sum(sr.get("total_hits", 0) for sr in shard_results)
 
@@ -142,6 +179,8 @@ async def search(
             page_size=page_size,
             total_hits=total_hits,
             took_ms=took_ms,
+            shards=shard_meta,
+            request_id=request_id,
         ),
         error=None,
     )
