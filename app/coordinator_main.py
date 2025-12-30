@@ -170,6 +170,8 @@ async def search(
         results=results,
     )
 
+    # TODO: If all shard fail, return 503 instead of empty OK response
+    # To be revisited once replication & quorum logic is implemented
     status = "ok" if not errors else "partial"
     return APIResponse(
         status=status,
