@@ -11,10 +11,38 @@ from app.models.api_response import APIResponse, Meta
 from app.models.search_response import SearchResult, SearchResponse
 from search.nltk_setup import ensure_nltk_data
 
+# COORDINATOR NETWORKING CONSTANTS
+CONNECT_TIMEOUT_SEC = 0.5
+READ_TIMEOUT_SEC = 1.5
+RETRY_ONCE = True
+
+_RETRYABLE_EXCEPTIONS = (
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.ConnectError,
+    httpx.RemoteProtocolError,
+)
+
 def _parse_shard_urls() -> List[str]:
     raw = os.getenv("SHARD_URLS", "http://127.0.0.1:8001,http://127.0.0.1:8002")
     urls = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
     return urls
+
+async def _post_with_retry(
+        client: httpx.AsyncClient,
+        url: str,
+        payload: Dict[str, Any],
+) -> httpx.Response:
+    """
+    Send a POST request and retry once on network-related exceptions.
+    We do NOT retry on HTTP status codes, those are real responses.
+    """
+    try:
+        return await client.post(url, json=payload)
+    except _RETRYABLE_EXCEPTIONS as e:
+        if not RETRY_ONCE:
+            raise e
+        return await client.post(url, json=payload)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,16 +68,13 @@ async def search(
 
     start_time = perf_counter()
 
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    timeout = httpx.Timeout(READ_TIMEOUT_SEC, connect=CONNECT_TIMEOUT_SEC)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = []
         for base in shard_urls:
             url = f"{base}/internal/search"
-            tasks.append(
-                client.post(
-                    url, 
-                    json={"q": q, "page":1, "page_size": k, "debug": True}
-                )
-            )
+            payload = {"q": q, "page": 1, "page_size": k, "debug": debug}
+            tasks.append(_post_with_retry(client, url, payload))
 
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -108,7 +133,7 @@ async def search(
         results=results,
     )
 
-    status = "ok" if not errors else "partial_ok"
+    status = "ok" if not errors else "partial"
     return APIResponse(
         status=status,
         data=data,
