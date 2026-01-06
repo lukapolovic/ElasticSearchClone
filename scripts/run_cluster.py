@@ -82,9 +82,9 @@ def _poll_ready(
 
     async def _check_once() -> Tuple[bool, List[str]]:
         problems: List[str] = []
-        timeout = httpx.Timeout(1.0, connect=0.5)
+        timeout = httpx.Timeout(1.0, connect=0.5) # type: ignore
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client: # type: ignore
             for shard_id, ports in sorted(shard_ports.items()):
                 any_ready = False
                 details: List[str] = []
@@ -255,12 +255,10 @@ def main() -> int:
                 
                 print("Shard process exited, keeping cluster running.")
 
-                procs = alive
-                time.sleep(1.0)
+            procs = alive
+            time.sleep(1.0)
     finally:
         _shutdown()
-
-    return 0
 
 
 if __name__ == "__main__":
