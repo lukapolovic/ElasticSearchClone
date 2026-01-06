@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import Any, Dict, List, Tuple, cast
+from typing import Any, Dict, List, Tuple, cast, Optional
 from fastapi import FastAPI, Query
 from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
@@ -29,6 +29,31 @@ def _parse_shard_urls() -> List[str]:
     urls = [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
     return urls
 
+def _parse_shard_groups() -> Dict[int, List[str]]:
+    """
+    Parse SHARD_GROUPS like:
+      "0=http://127.0.0.1:8001,http://127.0.0.1:8003;1=http://127.0.0.1:8002,http://127.0.0.1:8004"
+    Returns: {0: [...], 1: [...]}
+
+    Backward compat:
+    - if SHARD_GROUPS missing, fallback to SHARD_URLS (treated as one-replica-per-shard in list order)
+    """
+
+    raw = os.getenv("SHARD_GROUPS")
+    if raw and raw.strip():
+        groups: Dict[int, List[str]] = {}
+        parts = [p.strip() for p in raw.split(";") if p.strip()]
+        for part in parts:
+            left, right = part.split("=", 1)
+            shard_id = int(left.strip())
+            urls = [u.strip().rstrip("/") for u in right.split(",") if u.strip()]
+            groups[shard_id] = urls
+        return groups
+    
+    # Fallback to SHARD_URLS
+    urls = _parse_shard_urls()
+    return {i: [url] for i, url in enumerate(urls)}
+
 async def _post_with_retry(
         client: httpx.AsyncClient,
         url: str,
@@ -45,10 +70,72 @@ async def _post_with_retry(
             raise e
         return await client.post(url, json=payload)
 
+async def query_shard_group(
+        shard_id: int,
+        replicas: List[str],
+        client: httpx.AsyncClient,
+        payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Try replicas sequentially until one responds successfully.
+    Returns:
+    {
+        shard_id,
+        ok,
+        chosen_replica,
+        attempts: [...],
+        response_json: {...}  (if ok)
+    }
+    """
+    attempts: List[Dict[str, Any]] = []
+
+    for rep in replicas:
+        url = f"{rep}/internal/search"
+        t0 = perf_counter()
+        try:
+            resp = await _post_with_retry(client, url, payload)
+            elapsed_ms = round((perf_counter() - t0) * 1000, 2)
+
+            attempts.append(
+                {
+                    "replica": rep,
+                    "ok": resp.status_code == 200,
+                    "status_code": resp.status_code,
+                    "took_ms": elapsed_ms,
+                }
+            )
+
+            if resp.status_code == 200:
+                return {
+                    "shard_id": shard_id,
+                    "ok": True,
+                    "chosen_replica": rep,
+                    "attempts": attempts,
+                    "response_json": resp.json(),
+                }
+            
+        except Exception as e:
+            elapsed_ms = round((perf_counter() - t0) * 1000, 2)
+            attempts.append(
+                {
+                    "replica": rep,
+                    "ok": False,
+                    "error": type(e).__name__,
+                    "took_ms": elapsed_ms,
+                }
+            )
+
+    return {
+        "shard_id": shard_id,
+        "ok": False,
+        "chosen_replica": None,
+        "attempts": attempts,
+    }
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_nltk_data()
-    app.state.shard_urls = _parse_shard_urls()
+    app.state.shard_groups = _parse_shard_groups()
     yield
 
 app = FastAPI(
@@ -63,9 +150,10 @@ async def search(
     page_size: int = Query(10, ge=1, le=50),
     debug: bool = Query(False),
 ):
-    shard_urls: List[str] = app.state.shard_urls
+    shard_groups: Dict[int, List[str]] = app.state.shard_groups
 
     k = page * page_size
+    payload = {"q": q, "page": page, "page_size": k, "debug": debug}
 
     start_time = perf_counter()
 
@@ -73,38 +161,10 @@ async def search(
 
     timeout = httpx.Timeout(READ_TIMEOUT_SEC, connect=CONNECT_TIMEOUT_SEC)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        tasks = []
-        for i, base in enumerate(shard_urls):
-            url = f"{base}/internal/search"
-            payload = {"q": q, "page": 1, "page_size": k, "debug": debug}
-            
-            async def one_shard_call(shard_index: int, shard_base: str, shard_url: str):
-                t0 = perf_counter()
-                try:
-                    resp = await _post_with_retry(client, shard_url, payload)
-                    took_ms = round((perf_counter() - t0) * 1000, 2)
-                    return {
-                        "shard": shard_index,
-                        "base_url": shard_base,
-                        "ok": resp.status_code == 200,
-                        "status_code": resp.status_code,
-                        "took_ms": took_ms,
-                        "response": resp,
-                        "request_id": request_id,
-                    }
-                except Exception as e:
-                    took_ms = round((perf_counter() - t0) * 1000, 2)
-                    return {
-                        "shard": shard_index,
-                        "base_url": shard_base,
-                        "ok": False,
-                        "status_code": None,
-                        "took_ms": took_ms,
-                        "error": type(e).__name__,
-                    }
-                
-            tasks.append(one_shard_call(i, base, url))
-
+        tasks = [
+            query_shard_group(shard_id, replicas, client, payload)
+            for shard_id, replicas in shard_groups.items()
+        ]
         shard_call_results = await asyncio.gather(*tasks)
 
     shard_results: List[Dict[str, Any]] = []
@@ -112,23 +172,20 @@ async def search(
     shard_meta : List[Dict[str, Any]] = []
 
     for r in shard_call_results:
-        shard_meta_item = {
-            "shard": r["shard"],
-            "base_url": r["base_url"],
-            "ok": r["ok"],
-            "status_code": r["status_code"],
-            "took_ms": r["took_ms"],
-            "request_id": r["request_id"],
-        }
-        if not r["ok"]:
-            shard_meta_item["error"] = r.get("error") or f"status={r.get('status_code')}"
-            errors.append(f"Shard {r['shard']} {shard_meta_item['error']}")
-            shard_meta.append(shard_meta_item)
-            continue
+        shard_meta.append(
+            {
+                "shard_id": r["shard_id"],
+                "ok": r["ok"],
+                "chosen_replica": r["chosen_replica"],
+                "attempts": r["attempts"],
+            }
+        )
 
-        resp = cast(httpx.Response, r["response"])
-        shard_results.append(resp.json())
-        shard_meta.append(shard_meta_item)
+        if not r["ok"]:
+            errors.append(f"Shard Group: {r['shard_id']} all replicas failed")
+            continue
+        
+        shard_results.append(r["response_json"])
 
     total_hits = sum(sr.get("total_hits", 0) for sr in shard_results)
 
@@ -195,43 +252,46 @@ def health() -> Dict[str, str]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     """
-    Readiness: coordinator is ready only if ALL shards are ready
+    Readiness: coordinator is ready only if ALL shards and replications are ready
 
     We call each shard's /internal/ready endpoint to check readiness.
     If any shard is not ready, we return 503 Service Unavailable.
     """
-    shard_urls: List[str] = app.state.shard_urls
+    shard_groups: Dict[int, List[str]] = app.state.shard_groups
 
     timeout = httpx.Timeout(1.0, connect=0.5)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        tasks = []
-        for base in shard_urls:
-            url = f"{base}/internal/ready"
-            tasks.append(client.get(url))
+        not_ready_groups: List[str] = []
 
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        for shard_id, replicas in sorted(shard_groups.items()):
+            tasks = [client.get(f"{rep}/internal/ready") for rep in replicas]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    not_ready: List[str] = []
-    for base, r in zip(shard_urls, responses):
-        if isinstance(r, Exception):
-            not_ready.append(f"{base} error: {type(r).__name__}")
-            continue
+            any_ready = False
+            details: List[str] = []
 
-        resp = cast(httpx.Response, r)
+            for rep, resp in zip(replicas, responses):
+                if isinstance(resp, Exception):
+                    details.append(f"replica {rep} error: {type(resp).__name__}")
+                    continue
+                r = cast(httpx.Response, resp)
+                if r.status_code == 200:
+                    any_ready = True
+                else:
+                    details.append(f"replica {rep} status: {r.status_code}")
 
-        if resp.status_code != 200:
-            not_ready.append(f"{base} status={resp.status_code}")
+            if not any_ready:
+                not_ready_groups.append(
+                    f"shard_id {shard_id} failed replicas:={details}"
+                )
 
-    if not_ready:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "not_ready", 
-                "details": not_ready
-            }
-        )
-    
-    return JSONResponse(
-        status_code=200,
-        content={"status": "ready"}
-    )
+        if not_ready_groups:
+            return JSONResponse(
+                content={
+                    "status": "not ready",
+                    "details": not_ready_groups,
+                },
+                status_code=503,
+            )
+        
+        return JSONResponse(status_code=200, content={"status": "ready"})

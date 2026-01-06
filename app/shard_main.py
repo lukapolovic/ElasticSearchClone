@@ -22,11 +22,14 @@ async def lifespan(app: FastAPI):
     ensure_nltk_data()
     shard_id = _env_int("SHARD_ID", 0)
     num_shards = _env_int("NUM_SHARDS", 1)
+    replica_id = _env_int("REPLICA_ID", 0)
 
     search_service = SearchService(shard_id=shard_id, num_shards=num_shards)
     search_service.load_data()
 
     app.state.search_service = search_service
+    app.state.logical_shard_id = shard_id
+    app.state.replica_id = replica_id
 
     # Mark ready only after data is loaded and indexed
     app.state.is_ready = True
