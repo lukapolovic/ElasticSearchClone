@@ -236,16 +236,27 @@ def main() -> int:
         _poll_ready(coordinator_ports, shard_ports, args.host, args.ready_timeout)
         print("Cluster is ready.")
 
-    # Keep running until one process exits or user Ctrl+C
+    # Keep running until Ctrl+C
     try:
         while True:
+            alive: List[Proc] = []
             for proc in procs:
                 rc = proc.popen.poll()
-                if rc is not None:
-                    print(f"\nProcess exited: {proc.name} rc={rc}")
+                if rc is None:
+                    alive.append(proc)
+                    continue
+
+                print(f"\nProcess exited: {proc.name} rc={rc}")
+
+                if proc.name.startswith("coordinator"):
+                    print("Coordinator exited, shutting down cluster.")
                     _shutdown()
                     return 1
-            time.sleep(0.5)
+                
+                print("Shard process exited, keeping cluster running.")
+
+                procs = alive
+                time.sleep(1.0)
     finally:
         _shutdown()
 

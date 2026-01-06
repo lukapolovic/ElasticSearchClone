@@ -5,12 +5,19 @@ from fastapi import FastAPI, Query
 from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
 import httpx
-from time import perf_counter
+import time
 import uuid
+from enum import Enum
+from dataclasses import dataclass
 
 from app.models.api_response import APIResponse, Meta
 from app.models.search_response import SearchResult, SearchResponse
 from search.nltk_setup import ensure_nltk_data
+
+# HEARTBEAT CONSTANTS
+HEARTBEAT_INTERVAL_SEC = 1.0
+SUSPECT_AFTER_FAILURES = 2
+DOWN_AFTER_FAILURES = 5
 
 # COORDINATOR NETWORKING CONSTANTS
 CONNECT_TIMEOUT_SEC = 0.5
@@ -23,6 +30,100 @@ _RETRYABLE_EXCEPTIONS = (
     httpx.ConnectError,
     httpx.RemoteProtocolError,
 )
+
+class ReplicaStatus(str, Enum):
+    UP = "up"
+    SUSPECT = "suspect"
+    DOWN = "down"
+
+@dataclass
+class ReplicaState:
+    status: ReplicaStatus = ReplicaStatus.SUSPECT
+    consecutive_failures: int = 0
+    last_seen_ts: Optional[float] = None
+    last_rtt_ms: Optional[float] = None
+    ready: bool = False
+
+def _init_membership(shard_groups: Dict[int, List[str]]) -> Dict[str, ReplicaState]:
+    membership: Dict[str, ReplicaState] = {}
+    for replicas in shard_groups.values():
+        for base in replicas:
+            membership.setdefault(base, ReplicaState())
+    return membership
+
+async def _heartbeat_once(
+        client: httpx.AsyncClient,
+        base_url: str,
+) -> Tuple[bool, Optional[float]]:
+    """
+    Send a heartbeat request to the given base_url.
+    Returns success if /internal/ready returned HTTP 200.
+    """
+    t0 = time.perf_counter()
+    r = await client.get(f"{base_url}/internal/ready")
+    rtt_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    return (r.status_code == 200), rtt_ms
+
+async def _heartbeat_loop(app: "FastAPI") -> None:
+    """
+    Runs forever, sending heartbeat requests to all replicas periodically.
+    Updating app.state.membership accordingly.
+    """
+    timeout = httpx.Timeout(0.6, connect=0.2)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        while True:
+            shard_groups: Dict[int, List[str]] = app.state.shard_groups
+            membership: Dict[str, ReplicaState] = app.state.membership
+
+            for replicas in shard_groups.values():
+                for base in replicas:
+                    membership.setdefault(base, ReplicaState())
+
+            # Send heartbeats
+            tasks = []
+            bases: List[str] = []
+            for base in membership.keys():
+                bases.append(base)
+                tasks.append(_heartbeat_once(client, base))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            now = time.time()
+
+            for base, res in zip(bases, results):
+                state = membership[base]
+
+                if isinstance(res, Exception):
+                    state.consecutive_failures += 1
+                    state.ready = False
+                else:
+                    ready_ok, rtt_ms = cast(Tuple[bool, float], res)
+                    if ready_ok:
+                        state.consecutive_failures = 0
+                        state.last_seen_ts = now
+                        state.last_rtt_ms = rtt_ms
+                        state.ready = True
+                    else:
+                        state.consecutive_failures += 1
+                        state.ready = False
+                        state.last_rtt_ms = rtt_ms
+                    
+                # Update status based on consecutive failures
+                if state.consecutive_failures >= DOWN_AFTER_FAILURES:
+                    state.status = ReplicaStatus.DOWN
+                elif state.consecutive_failures >= SUSPECT_AFTER_FAILURES:
+                    state.status = ReplicaStatus.SUSPECT
+                else:
+                    state.status = ReplicaStatus.UP
+
+            await asyncio.sleep(HEARTBEAT_INTERVAL_SEC)
+
+def _replica_priority(status: ReplicaStatus) -> int:
+    if status == ReplicaStatus.UP:
+        return 0
+    elif status == ReplicaStatus.SUSPECT:
+        return 1
+    else:
+        return 2
 
 def _parse_shard_urls() -> List[str]:
     raw = os.getenv("SHARD_URLS", "http://127.0.0.1:8001,http://127.0.0.1:8002")
@@ -73,6 +174,7 @@ async def _post_with_retry(
 async def query_shard_group(
         shard_id: int,
         replicas: List[str],
+        membership: Dict[str, ReplicaState],
         client: httpx.AsyncClient,
         payload: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -89,12 +191,18 @@ async def query_shard_group(
     """
     attempts: List[Dict[str, Any]] = []
 
-    for rep in replicas:
+    # Prefer replicas by their status: UP > SUSPECT > DOWN
+    ordered_replicas = sorted(
+        replicas,
+        key=lambda r: _replica_priority(app.state.membership[r].status)
+    )
+
+    for rep in ordered_replicas:
         url = f"{rep}/internal/search"
-        t0 = perf_counter()
+        t0 = time.perf_counter()
         try:
             resp = await _post_with_retry(client, url, payload)
-            elapsed_ms = round((perf_counter() - t0) * 1000, 2)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
 
             attempts.append(
                 {
@@ -102,6 +210,7 @@ async def query_shard_group(
                     "ok": resp.status_code == 200,
                     "status_code": resp.status_code,
                     "took_ms": elapsed_ms,
+                    "replica_status": app.state.membership[rep].status.value,
                 }
             )
 
@@ -115,13 +224,14 @@ async def query_shard_group(
                 }
             
         except Exception as e:
-            elapsed_ms = round((perf_counter() - t0) * 1000, 2)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
             attempts.append(
                 {
                     "replica": rep,
                     "ok": False,
                     "error": type(e).__name__,
                     "took_ms": elapsed_ms,
+                    "replica_status": app.state.membership[rep].status.value,
                 }
             )
 
@@ -136,7 +246,17 @@ async def query_shard_group(
 async def lifespan(app: FastAPI):
     ensure_nltk_data()
     app.state.shard_groups = _parse_shard_groups()
-    yield
+    app.state.membership = _init_membership(app.state.shard_groups)
+
+    hb_task = asyncio.create_task(_heartbeat_loop(app))
+    try:
+        yield
+    finally:
+        hb_task.cancel()
+        try:
+            await hb_task
+        except asyncio.CancelledError:
+            pass
 
 app = FastAPI(
     title="ElasticSearchClone - Coordinator",
@@ -153,16 +273,17 @@ async def search(
     shard_groups: Dict[int, List[str]] = app.state.shard_groups
 
     k = page * page_size
+    membership: Dict[str, ReplicaState] = app.state.membership
     payload = {"q": q, "page": page, "page_size": k, "debug": debug}
 
-    start_time = perf_counter()
+    start_time = time.perf_counter()
 
     request_id = uuid.uuid4().hex[:12]
 
     timeout = httpx.Timeout(READ_TIMEOUT_SEC, connect=CONNECT_TIMEOUT_SEC)
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = [
-            query_shard_group(shard_id, replicas, client, payload)
+            query_shard_group(shard_id, replicas, membership, client, payload)
             for shard_id, replicas in shard_groups.items()
         ]
         shard_call_results = await asyncio.gather(*tasks)
@@ -198,7 +319,7 @@ async def search(
 
     merged_results.sort(key=lambda x: (-x[0], x[1]))
 
-    took_ms = round((perf_counter() - start_time) * 1000, 2)
+    took_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
     start = (page - 1) * page_size
     end = start + page_size
@@ -252,46 +373,41 @@ def health() -> Dict[str, str]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     """
-    Readiness: coordinator is ready only if ALL shards and replications are ready
+    Readiness: coordinator is ready if at least one replica per shard is ready.
 
-    We call each shard's /internal/ready endpoint to check readiness.
-    If any shard is not ready, we return 503 Service Unavailable.
+    We do not ping shard directly here, we rely on heartbeat state.
     """
     shard_groups: Dict[int, List[str]] = app.state.shard_groups
+    membership: Dict[str, ReplicaState] = app.state.membership
 
-    timeout = httpx.Timeout(1.0, connect=0.5)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        not_ready_groups: List[str] = []
+    not_ready_groups: List[str] = []
 
-        for shard_id, replicas in sorted(shard_groups.items()):
-            tasks = [client.get(f"{rep}/internal/ready") for rep in replicas]
-            responses = await asyncio.gather(*tasks, return_exceptions=True)
+    for shard_id, replicas in sorted(shard_groups.items()):
+        any_ready = False
+        details: List[str] = []
 
-            any_ready = False
-            details: List[str] = []
+        for rep in replicas:
+            state = membership.get(rep)
 
-            for rep, resp in zip(replicas, responses):
-                if isinstance(resp, Exception):
-                    details.append(f"replica {rep} error: {type(resp).__name__}")
-                    continue
-                r = cast(httpx.Response, resp)
-                if r.status_code == 200:
-                    any_ready = True
-                else:
-                    details.append(f"replica {rep} status: {r.status_code}")
+            if state is None:
+                details.append(f"{rep} status=unknown ready=False")
+                continue
 
-            if not any_ready:
-                not_ready_groups.append(
-                    f"shard_id {shard_id} failed replicas:={details}"
-                )
+            details.append(f"{rep} status={state.status.value} ready={state.ready} failes={state.consecutive_failures}")
 
-        if not_ready_groups:
-            return JSONResponse(
-                content={
-                    "status": "not ready",
-                    "details": not_ready_groups,
-                },
-                status_code=503,
-            )
-        
-        return JSONResponse(status_code=200, content={"status": "ready"})
+            if state.ready and state.status != ReplicaStatus.DOWN:
+                any_ready = True
+
+        if not any_ready:
+            not_ready_groups.append(f"shard_id {shard_id} no ready replicas. Details:{details}")
+
+    if not_ready_groups:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "details": not_ready_groups,
+            },
+        )
+    
+    return JSONResponse(status_code=200, content={"status": "ready"})
