@@ -239,7 +239,7 @@ async def query_shard_group(
                     "ok": False,
                     "error": type(e).__name__,
                     "took_ms": elapsed_ms,
-                    "replica_status": app.state.membership[rep].status.value,
+                    "replica_status": membership.get(rep, ReplicaState()).status.value,
                 }
             )
 
