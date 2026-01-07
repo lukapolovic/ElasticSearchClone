@@ -14,6 +14,10 @@ from app.models.api_response import APIResponse, Meta
 from app.models.search_response import SearchResult, SearchResponse
 from search.nltk_setup import ensure_nltk_data
 
+# QUORUM CONSTANTS
+READ_QUORUM_ENV = "READ_QUORUM"
+MAX_REPLICA_FANOUT = None
+
 # HEARTBEAT CONSTANTS
 HEARTBEAT_INTERVAL_SEC = 1.0
 SUSPECT_AFTER_FAILURES = 2
@@ -179,6 +183,29 @@ async def _post_with_retry(
             raise e
         return await client.post(url, json=payload)
 
+def _majority(n: int) -> int:
+    return (n // 2) + 1
+
+def _parse_read_quorum(num_replicas: int) -> int:
+    """
+    ALlows overriding quorum with environment variable - READ_QUORUM.
+    If not set, defaults to majority (majority(num_replicas)).
+    If set -> that integer (clamped to [1, num_replicas])
+    """
+    raw = os.getenv(READ_QUORUM_ENV, "majority").strip().lower()
+    if raw in ("majority", ""):
+        return _majority(num_replicas)
+    
+    try:
+        q = int(raw)
+        if q < 1:
+            return 1
+        if q > num_replicas:
+            q = num_replicas
+        return q
+    except Exception:
+        return _majority(num_replicas)
+
 async def query_shard_group(
         shard_id: int,
         replicas: List[str],
@@ -187,17 +214,13 @@ async def query_shard_group(
         payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Try replicas sequentially until one responds successfully.
-    Returns:
-    {
-        shard_id,
-        ok,
-        chosen_replica,
-        attempts: [...],
-        response_json: {...}  (if ok)
-    }
+    Read-quorum query:
+    - We contact multiple replicas in parallel (up to all)
+    - We require quorum_required successsful responses (HTTP 200) to mark the shard-group OK
+    - We still use a single successful response for merging results (replicas assumed identical)
     """
-    attempts: List[Dict[str, Any]] = []
+    num_replicas = len(replicas)
+    quorum_required = _parse_read_quorum(num_replicas)
 
     # Prefer replicas by their status: UP > SUSPECT > DOWN
     ordered_replicas = sorted(
@@ -205,49 +228,87 @@ async def query_shard_group(
         key=lambda r: _replica_priority(membership.get(r, ReplicaState()).status)
     )
 
-    for rep in ordered_replicas:
+    # Limit fanout if configured
+    if MAX_REPLICA_FANOUT is not None:
+        fanout_replicas = ordered_replicas[:MAX_REPLICA_FANOUT]
+
+    attempts: List[Dict[str, Any]] = []
+    ok_count = 0
+    response_json: Optional[Dict[str, Any]] = None
+    chosen_replica: Optional[str] = None
+
+    async def _call_one(rep: str) -> Tuple[str, bool, Optional[int], Optional[Dict[str, Any]], Dict[str, Any]]:
+        """
+        Returns:
+         (replica_url, ok, status_code, json_payload_if_ok, attempt_meta)
+        """
         url = f"{rep}/internal/search"
         t0 = time.perf_counter()
         try:
             resp = await _post_with_retry(client, url, payload)
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-
-            attempts.append(
-                {
-                    "replica": rep,
-                    "ok": resp.status_code == 200,
-                    "status_code": resp.status_code,
-                    "took_ms": elapsed_ms,
-                    "replica_status": membership.get(rep, ReplicaState()).status.value,
-                }
-            )
-
-            if resp.status_code == 200:
-                return {
-                    "shard_id": shard_id,
-                    "ok": True,
-                    "chosen_replica": rep,
-                    "attempts": attempts,
-                    "response_json": resp.json(),
-                }
-            
+            took_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            ok = resp.status_code == 200
+            j = resp.json() if ok else None
+            meta = {
+                "replica": rep,
+                "ok": ok,
+                "status_code": resp.status_code,
+                "took_ms": took_ms,
+                "replica_status": membership.get(rep, ReplicaState()).status.value,
+                "replica_ready": membership.get(rep, ReplicaState()).ready,
+            }
+            return rep, ok, resp.status_code, j, meta
         except Exception as e:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-            attempts.append(
-                {
-                    "replica": rep,
-                    "ok": False,
-                    "error": type(e).__name__,
-                    "took_ms": elapsed_ms,
-                    "replica_status": membership.get(rep, ReplicaState()).status.value,
-                }
-            )
+            took_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            meta = {
+                "replica": rep,
+                "ok": False,
+                "error": str(e),
+                "took_ms": took_ms,
+                "replica_status": membership.get(rep, ReplicaState()).status.value,
+                "replica_ready": membership.get(rep, ReplicaState()).ready,
+            }
+            return rep, False, None, None, meta
+    
+    tasks = [asyncio.create_task(_call_one(rep)) for rep in ordered_replicas]
+
+    try:
+        for fut in asyncio.as_completed(tasks):
+            rep, ok, _status, j, meta = await fut
+            attempts.append(meta)
+
+            if ok:
+                ok_count += 1
+                # Pick the first successful response
+                if response_json is None and j is not None:
+                    response_json = j
+                    chosen_replica = rep
+
+                # Stop early if quorum met
+                if ok_count >= quorum_required:
+                    break
+    finally:
+        # Cancel any remaining tasks
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    quorum_met = (ok_count >= quorum_required)
 
     return {
         "shard_id": shard_id,
-        "ok": False,
-        "chosen_replica": None,
+        "ok": quorum_met,
+        "quorum_required": quorum_required,
+        "ok_replicas": ok_count,
+        "total_replicas": num_replicas,
+        "chosen_replica": chosen_replica,
         "attempts": attempts,
+        "response_json": response_json,
     }
 
 @asynccontextmanager
@@ -305,13 +366,19 @@ async def search(
             {
                 "shard_id": r["shard_id"],
                 "ok": r["ok"],
+                "quorum_required": r["quorum_required"],
+                "ok_replicas": r["ok_replicas"],
+                "total_replicas": r["total_replicas"],
                 "chosen_replica": r["chosen_replica"],
                 "attempts": r["attempts"],
             }
         )
 
         if not r["ok"]:
-            errors.append(f"Shard Group: {r['shard_id']} all replicas failed")
+            errors.append(
+                f"Shard Group: {r['shard_id']} quorum failed"
+                f"(ok={r['ok_replicas']}/{r['quorum_required']}, total={r['total_replicas']})"
+            )
             continue
         
         shard_results.append(r["response_json"])
