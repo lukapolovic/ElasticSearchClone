@@ -18,6 +18,7 @@ from search.nltk_setup import ensure_nltk_data
 HEARTBEAT_INTERVAL_SEC = 1.0
 SUSPECT_AFTER_FAILURES = 2
 DOWN_AFTER_FAILURES = 5
+PROBATION_SUCCESSES = 3
 
 # COORDINATOR NETWORKING CONSTANTS
 CONNECT_TIMEOUT_SEC = 0.5
@@ -40,6 +41,7 @@ class ReplicaStatus(str, Enum):
 class ReplicaState:
     status: ReplicaStatus = ReplicaStatus.SUSPECT
     consecutive_failures: int = 0
+    success_streak: int = 0
     last_seen_ts: Optional[float] = None
     last_rtt_ms: Optional[float] = None
     ready: bool = False
@@ -94,16 +96,19 @@ async def _heartbeat_loop(app: "FastAPI") -> None:
 
                 if isinstance(res, Exception):
                     state.consecutive_failures += 1
+                    state.success_streak = 0
                     state.ready = False
                 else:
                     ready_ok, rtt_ms = cast(Tuple[bool, float], res)
                     if ready_ok:
                         state.consecutive_failures = 0
+                        state.success_streak += 1
                         state.last_seen_ts = now
                         state.last_rtt_ms = rtt_ms
                         state.ready = True
                     else:
                         state.consecutive_failures += 1
+                        state.success_streak = 0
                         state.ready = False
                         state.last_rtt_ms = rtt_ms
                     
@@ -113,7 +118,10 @@ async def _heartbeat_loop(app: "FastAPI") -> None:
                 elif state.consecutive_failures >= SUSPECT_AFTER_FAILURES:
                     state.status = ReplicaStatus.SUSPECT
                 else:
-                    state.status = ReplicaStatus.UP
+                    if state.success_streak >= PROBATION_SUCCESSES and state.ready:
+                        state.status = ReplicaStatus.UP
+                    else:
+                        state.status = ReplicaStatus.SUSPECT
 
             await asyncio.sleep(HEARTBEAT_INTERVAL_SEC)
 
@@ -411,3 +419,22 @@ async def ready() -> JSONResponse:
         )
     
     return JSONResponse(status_code=200, content={"status": "ready"})
+
+@app.get("/membership")
+def membership_view() -> Dict[str, Any]:
+    """
+    Debug endpoint to view current membership and replica states.
+    """
+    membership: Dict[str, ReplicaState] = app.state.membership
+
+    out: Dict[str, Any] = {}
+    for base, state in sorted(membership.items()):
+        out[base] = {
+            "status": state.status.value,
+            "ready": state.ready,
+            "consecutive_failures": state.consecutive_failures,
+            "success_streak": state.success_streak,
+            "last_seen_ts": state.last_seen_ts,
+            "last_rtt_ms": state.last_rtt_ms,
+        }
+    return out
