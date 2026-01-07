@@ -194,7 +194,7 @@ async def query_shard_group(
     # Prefer replicas by their status: UP > SUSPECT > DOWN
     ordered_replicas = sorted(
         replicas,
-        key=lambda r: _replica_priority(app.state.membership[r].status)
+        key=lambda r: _replica_priority(membership.get(r, ReplicaState()).status)
     )
 
     for rep in ordered_replicas:
@@ -210,7 +210,7 @@ async def query_shard_group(
                     "ok": resp.status_code == 200,
                     "status_code": resp.status_code,
                     "took_ms": elapsed_ms,
-                    "replica_status": app.state.membership[rep].status.value,
+                    "replica_status": membership.get(rep, ReplicaState()).status.value,
                 }
             )
 
@@ -274,7 +274,7 @@ async def search(
 
     k = page * page_size
     membership: Dict[str, ReplicaState] = app.state.membership
-    payload = {"q": q, "page": page, "page_size": k, "debug": debug}
+    payload = {"q": q, "page": 1, "page_size": k, "debug": debug}
 
     start_time = time.perf_counter()
 
