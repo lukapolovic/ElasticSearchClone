@@ -1,0 +1,151 @@
+services:
+  router:
+    build: .
+    container_name: esc_router
+    environment:
+      # Router should route to coordinators via service names inside Docker network
+      COORDINATOR_URLS: "http://coord0:8000,http://coord1:8000,http://coord2:8000"
+    ports:
+      - "9100:8000"
+    command: ["python", "-m", "uvicorn", "app.router_main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - coord0
+      - coord1
+      - coord2
+
+  coord0:
+    build: .
+    container_name: esc_coord0
+    environment:
+      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+    command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - shard0rep0
+      - shard0rep1
+      - shard0rep2
+      - shard1rep0
+      - shard1rep1
+      - shard1rep2
+      - shard2rep0
+      - shard2rep1
+      - shard2rep2
+
+  coord1:
+    build: .
+    container_name: esc_coord1
+    environment:
+      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+    command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - coord0
+
+  coord2:
+    build: .
+    container_name: esc_coord2
+    environment:
+      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+    command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - coord0
+
+  # --- Shard group 0 (3 replicas) ---
+  shard0rep0:
+    build: .
+    container_name: esc_shard0rep0
+    environment:
+      SHARD_ID: "0"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "0"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard0rep1:
+    build: .
+    container_name: esc_shard0rep1
+    environment:
+      SHARD_ID: "0"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "1"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro      
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard0rep2:
+    build: .
+    container_name: esc_shard0rep2
+    environment:
+      SHARD_ID: "0"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "2"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # --- Shard group 1 ---
+  shard1rep0:
+    build: .
+    container_name: esc_shard1rep0
+    environment:
+      SHARD_ID: "1"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "0"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard1rep1:
+    build: .
+    container_name: esc_shard1rep1
+    environment:
+      SHARD_ID: "1"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "1"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard1rep2:
+    build: .
+    container_name: esc_shard1rep2
+    environment:
+      SHARD_ID: "1"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "2"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # --- Shard group 2 ---
+  shard2rep0:
+    build: .
+    container_name: esc_shard2rep0
+    environment:
+      SHARD_ID: "2"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "0"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard2rep1:
+    build: .
+    container_name: esc_shard2rep1
+    environment:
+      SHARD_ID: "2"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "1"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  shard2rep2:
+    build: .
+    container_name: esc_shard2rep2
+    environment:
+      SHARD_ID: "2"
+      NUM_SHARDS: "3"
+      REPLICA_ID: "2"
+    volumes:
+      - ./scripts/data:/app/scripts/data:ro
+    command: ["python", "-m", "uvicorn", "app.shard_main:app", "--host", "0.0.0.0", "--port", "8000"]

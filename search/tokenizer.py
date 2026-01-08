@@ -1,12 +1,24 @@
+from typing import Optional, Set
 import unicodedata
 import regex
-import nltk
-from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
-STOP_WORDS = set(stopwords.words('english'))
+STOP_WORDS: Optional[Set[str]] = None
 
 lemmatizer = WordNetLemmatizer()
+
+def _get_stop_words():
+    """
+    Lazy load stop words from NLTK.
+    This avoids crashing at import time (in Docker)
+    """
+    global STOP_WORDS
+    if STOP_WORDS is not None:
+        return STOP_WORDS
+    
+    from nltk.corpus import stopwords
+    STOP_WORDS = set(stopwords.words("english"))
+    return STOP_WORDS
 
 def normalize_unicode(text):
     normalized = unicodedata.normalize("NFKD", text)
@@ -36,7 +48,8 @@ def tokenize(text, use_lemmatization=True):
 
     tokens = text.split()
 
-    tokens = [t for t in tokens if t not in STOP_WORDS]
+    stop_words = _get_stop_words()
+    tokens = [t for t in tokens if t not in stop_words]
 
     if use_lemmatization:
         tokens = [lemmatizer.lemmatize(t, pos='v') for t in tokens]
