@@ -17,7 +17,10 @@ services:
     build: .
     container_name: esc_coord0
     environment:
-      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+      ROLE: coordinator
+      NUM_SHARDS: "3"
+      REPLICAS_PER_SHARD: "3"
+      SHARD_HOST_TEMPLATE: "http://shard{shard}rep{rep}:8000"
     command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       - shard0rep0
@@ -34,7 +37,10 @@ services:
     build: .
     container_name: esc_coord1
     environment:
-      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+      ROLE: coordinator
+      NUM_SHARDS: "3"
+      REPLICAS_PER_SHARD: "3"
+      SHARD_HOST_TEMPLATE: "http://shard{shard}rep{rep}:8000"
     command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       - coord0
@@ -43,7 +49,10 @@ services:
     build: .
     container_name: esc_coord2
     environment:
-      SHARD_GROUPS: "0=http://shard0rep0:8000,http://shard0rep1:8000,http://shard0rep2:8000;1=http://shard1rep0:8000,http://shard1rep1:8000,http://shard1rep2:8000;2=http://shard2rep0:8000,http://shard2rep1:8000,http://shard2rep2:8000"
+      ROLE: coordinator
+      NUM_SHARDS: "3"
+      REPLICAS_PER_SHARD: "3"
+      SHARD_HOST_TEMPLATE: "http://shard{shard}rep{rep}:8000"
     command: ["python", "-m", "uvicorn", "app.coordinator_main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       - coord0

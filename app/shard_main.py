@@ -2,6 +2,8 @@ import os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
+from fastapi.responses import JSONResponse
+
 from app.core.search_service import SearchService
 from app.api.routes import internal_search
 from app.api.errors import search_error_handler
@@ -43,3 +45,14 @@ app = FastAPI(
 app.include_router(internal_search.router, prefix="/internal", tags=["internal"])
 
 app.add_exception_handler(SearchError, search_error_handler)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/ready")
+def ready():
+    # mirror internal readiness for K8 probes
+    if not getattr(app.state, "is_ready", False):
+        return JSONResponse(status_code=503, content={"status": "not ready"})
+    return {"status": "ready"}

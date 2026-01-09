@@ -167,6 +167,29 @@ def _parse_shard_groups() -> Dict[int, List[str]]:
     urls = _parse_shard_urls()
     return {i: [url] for i, url in enumerate(urls)}
 
+def _build_shard_groups_from_env() -> Optional[Dict[int, List[str]]]:
+    """
+    K8/Docker Compose friendly way to define shard groups
+    using NUM_SHARDS, REPLICAS_PER_SHARD and SHARD_HOST_TEMPLATE
+    """
+    num_shards = os.getenv("NUM_SHARDS")
+    replicas = os.getenv("REPLICAS_PER_SHARD")
+    template = os.getenv("SHARD_HOST_TEMPLATE")
+
+    if not (num_shards and replicas and template):
+        return None
+    
+    ns = int(num_shards)
+    r = int(replicas)
+
+    groups: Dict[int, List[str]] = {}
+    for shard_id in range(ns):
+        urls = []
+        for rep in range(r):
+            urls.append(template.format(shard=shard_id, rep=rep).rstrip("/"))
+        groups[shard_id] = urls
+    return groups
+
 async def _post_with_retry(
         client: httpx.AsyncClient,
         url: str,
@@ -314,7 +337,13 @@ async def query_shard_group(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_nltk_data()
-    app.state.shard_groups = _parse_shard_groups()
+
+    env_groups = _build_shard_groups_from_env()
+    if env_groups is not None:
+        app.state.shard_groups = env_groups
+    else:
+        app.state.shard_groups = _parse_shard_groups()
+
     app.state.membership = _init_membership(app.state.shard_groups)
 
     hb_task = asyncio.create_task(_heartbeat_loop(app))
