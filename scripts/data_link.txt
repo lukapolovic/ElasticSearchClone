@@ -1,0 +1,6 @@
+Download the dataset as a csv file from the link below 
+and place it into /scripts/data/
+after that run the inspect_database.py file to confirm everything is ok
+and then run the transform_movies.py script to get the cleaned.jsonl file
+
+https://www.kaggle.com/datasets/utsh0dey/25k-movie-dataset
