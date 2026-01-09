@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 # Avoid .pyc files and ensure logs flush
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NLTK_DATA=/app/nltk_data
 
 WORKDIR /app
 
@@ -18,6 +19,7 @@ COPY search /app/search
 
 # Data
 RUN mkdir -p /app/scripts/data
+COPY scripts/data/25kMovies.cleaned.jsonl /app/scripts/data/25kMovies.cleaned.jsonl
 
 RUN pip install --no-cache-dir -e .
 
@@ -25,6 +27,8 @@ RUN pip install --no-cache-dir -e .
 # ensure_nltk_data.py downloads into ./nltk_data directory in the repo root
 RUN python -c "from search.nltk_setup import ensure_nltk_data; ensure_nltk_data()"
 
-EXPOSE 8000
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
 
-CMD ["python", "-m", "uvicorn", "app.router_main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+ENTRYPOINT ["/app/docker/entrypoint.sh"]
