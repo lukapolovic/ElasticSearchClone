@@ -1,0 +1,17 @@
+- Start K8 cluster
+kubectl apply -f k8/esc.yaml
+kubectl -n esc get pods -w
+
+- Port forward the router
+kubectl -n esc port-forward svc/router 9100:8000
+Link to router: http://127.0.0.1:9100/docs
+
+- Port forward the coordinator
+kubectl -n esc port-forward pod/coordinator-0 9200:8000
+Link to coordinator: http://127.0.0.1:9200/docs
+
+- Delete pod (restarting, quorum demo)
+kubectl -n esc delete pod shard1-0
+
+- Shut down
+kubectl delete namespace esc
