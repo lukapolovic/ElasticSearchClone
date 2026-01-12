@@ -1,0 +1,360 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: esc
+---
+# -----------------------------
+# Router Service (external-ish)
+# -----------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: router
+  namespace: esc
+spec:
+  selector:
+    app: esc
+    role: router
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+# -----------------------------
+# Coordinator Headless Service
+# (stable DNS: coordinator-0.coordinator, etc.)
+# -----------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  namespace: esc
+spec:
+  clusterIP: None
+  selector:
+    app: esc
+    role: coordinator
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+# -----------------------------
+# Shard Headless Services
+# (stable DNS: shard0-0.shard0, shard1-2.shard1, etc.)
+# -----------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard0
+  namespace: esc
+spec:
+  clusterIP: None
+  selector:
+    app: esc
+    role: shard
+    shard-id: "0"
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard1
+  namespace: esc
+spec:
+  clusterIP: None
+  selector:
+    app: esc
+    role: shard
+    shard-id: "1"
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard2
+  namespace: esc
+spec:
+  clusterIP: None
+  selector:
+    app: esc
+    role: shard
+    shard-id: "2"
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+# -----------------------------
+# Router Deployment
+# -----------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router
+  namespace: esc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: esc
+      role: router
+  template:
+    metadata:
+      labels:
+        app: esc
+        role: router
+    spec:
+      containers:
+        - name: router
+          image: esc:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: router
+            - name: PORT
+              value: "8000"
+            # Probe each coordinator pod directly (stable hostnames thanks to StatefulSet)
+            - name: COORDINATOR_URLS
+              value: "http://coordinator-0.coordinator.esc.svc.cluster.local:8000,http://coordinator-1.coordinator.esc.svc.cluster.local:8000,http://coordinator-2.coordinator.esc.svc.cluster.local:8000"
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 2
+
+---
+# -----------------------------
+# Coordinators StatefulSet
+# -----------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: coordinator
+  namespace: esc
+spec:
+  serviceName: coordinator
+  replicas: 3
+  selector:
+    matchLabels:
+      app: esc
+      role: coordinator
+  template:
+    metadata:
+      labels:
+        app: esc
+        role: coordinator
+    spec:
+      containers:
+        - name: coordinator
+          image: esc:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: coordinator
+            - name: PORT
+              value: "8000"
+
+            # Topology for coordinator -> shards
+            - name: NUM_SHARDS
+              value: "3"
+            - name: REPLICAS_PER_SHARD
+              value: "3"
+
+            # This matches our shard StatefulSet + headless service naming:
+            # Pod DNS: shard{shard}-{rep}.shard{shard}.esc.svc.cluster.local
+            - name: SHARD_HOST_TEMPLATE
+              value: "http://shard{shard}-{rep}.shard{shard}.esc.svc.cluster.local:8000"
+
+            # Optional: keep majority reads by default (or override to 1/2/3)
+            - name: READ_QUORUM
+              value: "majority"
+
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 2
+
+---
+# -----------------------------
+# Shards: shard0 StatefulSet (3 replicas)
+# -----------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard0
+  namespace: esc
+spec:
+  serviceName: shard0
+  replicas: 3
+  selector:
+    matchLabels:
+      app: esc
+      role: shard
+      shard-id: "0"
+  template:
+    metadata:
+      labels:
+        app: esc
+        role: shard
+        shard-id: "0"
+    spec:
+      containers:
+        - name: shard
+          image: esc:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: shard
+            - name: PORT
+              value: "8000"
+            - name: SHARD_ID
+              value: "0"
+            - name: NUM_SHARDS
+              value: "3"
+            # REPLICA_ID will be derived from pod ordinal by your entrypoint.sh
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /internal/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /internal/ready
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 2
+
+---
+# -----------------------------
+# Shards: shard1 StatefulSet (3 replicas)
+# -----------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard1
+  namespace: esc
+spec:
+  serviceName: shard1
+  replicas: 3
+  selector:
+    matchLabels:
+      app: esc
+      role: shard
+      shard-id: "1"
+  template:
+    metadata:
+      labels:
+        app: esc
+        role: shard
+        shard-id: "1"
+    spec:
+      containers:
+        - name: shard
+          image: esc:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: shard
+            - name: PORT
+              value: "8000"
+            - name: SHARD_ID
+              value: "1"
+            - name: NUM_SHARDS
+              value: "3"
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /internal/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /internal/ready
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 2
+
+---
+# -----------------------------
+# Shards: shard2 StatefulSet (3 replicas)
+# -----------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard2
+  namespace: esc
+spec:
+  serviceName: shard2
+  replicas: 3
+  selector:
+    matchLabels:
+      app: esc
+      role: shard
+      shard-id: "2"
+  template:
+    metadata:
+      labels:
+        app: esc
+        role: shard
+        shard-id: "2"
+    spec:
+      containers:
+        - name: shard
+          image: esc:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: shard
+            - name: PORT
+              value: "8000"
+            - name: SHARD_ID
+              value: "2"
+            - name: NUM_SHARDS
+              value: "3"
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /internal/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /internal/ready
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 2
