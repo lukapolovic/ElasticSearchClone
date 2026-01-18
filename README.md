@@ -89,3 +89,7 @@ In a real production system, the following would be added:
   Fan out queries to shard replicas, enforce quorum, merge results.
 - **Shards**  
   Store and search indexed data. Each shard has multiple replicas.
+
+## Kubernetes Deployment Architecuture
+
+![ElasticSearchClone Kubernetes Architecture](docs/architecture_k8s.svg)
