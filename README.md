@@ -81,16 +81,7 @@ In a real production system, the following would be added:
 
 ## Architecture Diagram
 
-Client
-   |
-   v
-[ Router ]
-   |
-   v
-[ Coordinators ] (N replicas, load-balanced)
-   |
-   v
-[ Shards ] (Logical shards, each with multiple replicas)
+![ElasticSearchClone Architecture](docs/architecture.svg)
 
 - **Router**  
   Entry point for clients. Routes requests to healthy coordinators.
